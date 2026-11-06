@@ -11,11 +11,11 @@ import {
   Info,
   ListOrdered,
   Loader2,
+  MonitorSmartphone,
   Pencil,
   RotateCcw,
   StickyNote,
   Target,
-  Trash2,
   User,
   Wrench,
   type LucideIcon,
@@ -27,20 +27,10 @@ import { NotFoundPage } from '@/app/not-found-page'
 import { Breadcrumb } from '@/components/common/breadcrumb'
 import { CoreBadge, MustFixBadge, Pill, PlatformBadge, SeverityBadge, StatusBadge } from '@/components/common/badges'
 import { PersonSelect } from '@/components/common/person-select'
+import { OtpDeleteButton } from '@/components/common/otp-dialog'
 import { Section } from '@/components/common/section'
 import { ErrorState } from '@/components/common/states'
 import { UserName } from '@/components/common/user-avatar'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -87,36 +77,18 @@ function DeleteBugButton({ bug, projectKey }: { bug: Bug; projectKey?: string })
   const navigate = useNavigate()
   const del = useDeleteBug()
   return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>
-        <Button variant="outline" size="sm" className="text-destructive-text hover:text-destructive-text">
-          <Trash2 aria-hidden />
-          {t('action.delete')}
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t('detail.deleteTitle', { code: bug.code })}</AlertDialogTitle>
-          <AlertDialogDescription>{t('detail.deleteDesc', { code: bug.code })}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel autoFocus>{t('action.cancel')}</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            onClick={() =>
-              del.mutate(bug.code, {
-                onSuccess: () => {
-                  toast.success(t('toast.bugDeleted', { code: bug.code }))
-                  navigate(projectKey ? `/${projectKey}` : '/all', { replace: true })
-                },
-              })
-            }
-          >
-            {t('action.deleteBug')}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <OtpDeleteButton
+      title={t('detail.deleteTitle', { code: bug.code })}
+      description={t('detail.deleteDesc', { code: bug.code })}
+      confirmLabel={t('action.deleteBug')}
+      confirmCode={bug.code}
+      onConfirm={(otp, confirm) =>
+        del.mutateAsync({ code: bug.code, confirm, otp }).then(() => {
+          toast.success(t('toast.bugDeleted', { code: bug.code }))
+          navigate(projectKey ? `/${projectKey}` : '/all', { replace: true })
+        })
+      }
+    />
   )
 }
 
@@ -364,6 +336,12 @@ export function BugDetailPage() {
                 <time dateTime={bug.createdAt} className="tabular-nums">
                   {formatTs(bug.createdAt)}
                 </time>
+              </dd>
+              <dt className="text-muted-foreground">
+                <IconLabel icon={MonitorSmartphone}>{t('field.platform')}</IconLabel>
+              </dt>
+              <dd className="flex min-w-0 flex-wrap gap-1.5">
+                <PlatformBadge platform={bug.platform} />
               </dd>
               <dt className="text-muted-foreground">
                 <IconLabel icon={Target}>{t('field.core')}</IconLabel>

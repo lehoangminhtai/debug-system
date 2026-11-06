@@ -15,7 +15,7 @@
 | Danh sách người báo / người sửa | Mảng cố định `Lan, Minh, Hùng, Trang, An, Quân` | Danh bạ IAM qua `User@index` |
 | Ảnh minh chứng | Data URL lưu trong `localStorage` | Gửi data URL lên, backend lưu file, trả về URL |
 | Lịch sử "ai làm gì" | FE tự ghi bằng tên đang chọn | Backend tự ghi theo người đăng nhập, FE không gửi |
-| Phân quyền | Không có | **Chưa bật.** Ai đăng nhập được thì dùng được mọi chức năng |
+| Phân quyền | Không có | **Một quyền duy nhất: được vào DTS**, cấp trên IAM. Ai vào được thì dùng mọi chức năng (giống App VCM) |
 
 Việc FE cần làm:
 
@@ -24,6 +24,7 @@ Việc FE cần làm:
 3. Gắn `Authorization: Bearer <token>` vào mọi request, gặp 401 thì đưa về trang đăng nhập (mục 3).
 4. Thay ô "Tôi là" bằng menu người dùng (tên + Đăng xuất), bỏ dòng thông báo `nav.localData`.
 5. Thêm các khoá i18n mới (mục 8).
+6. Thêm hộp thoại nhập **OTP** cho thao tác lưu/xoá (mục 12).
 
 ---
 
@@ -33,6 +34,7 @@ Việc FE cần làm:
 |---|---|
 | Base URL (cùng máy chủ với FE) | `/web_develop/dts/backend/` |
 | Base URL (chạy Vite ở máy dev) | `http://192.168.110.2/web_develop/dts/backend/` |
+| Máy chủ thứ hai (FE build bằng `npm run build:deploy`) | `http://192.168.110.7/dts/backend/` (xem README, mục Deploy) |
 | Kiểu định tuyến | C&M: controller và method nằm trên query string `?c=<Controller>&m=<method>` |
 | Định dạng | JSON, UTF-8 |
 | CORS | Cho phép `http://192.168.110.2`, `http://localhost`, `http://localhost:3000`, `http://localhost:5173`. Origin khác nhận `403 CORS not allowed` |
@@ -70,7 +72,8 @@ FE lưu token, gắn vào mọi request ──► Backend tự kiểm chữ ký 
 - Đăng nhập bằng **username hoặc mã nhân viên** cùng mật khẩu IAM.
 - Tài khoản đã bật 2FA thì phải nhập thêm **OTP 6 số**.
 - Token chứa danh tính (`sub` = UUID, `username`, `fullname`, `employee_id`, `role`). Backend lấy người thao tác từ token, nên mọi tham số kiểu "người làm" do FE gửi đều bị bỏ qua.
-- Trạng thái backend: `IAM_AUTH_ENABLED=true` (đã bật), `IAM_PERMISSION_ENABLED=false` (phân quyền chưa bật).
+- **Quyền vào DTS:** chỉ có một quyền, cấp trên IAM (cách setup ở mục 11). Người chưa được cấp quyền thì đăng nhập bị từ chối với mã `no_access` và không nhận token. Người đang dùng mà bị gỡ quyền thì mọi request sau đó (chậm nhất 60 giây) trả `403 no_access`. Không có phân quyền theo chức năng: đã vào được thì dùng mọi chức năng.
+- Trạng thái backend: `IAM_AUTH_ENABLED=true`. Quyền vào DTS bật bằng `IAM_PERMISSION_ENABLED=true` sau khi đã khai báo bên IAM (mục 11). Khi cờ này tắt, ai đăng nhập IAM được cũng vào được.
 
 ### 2.2. `POST ?c=Auth&m=login`
 
@@ -121,6 +124,7 @@ Mọi lỗi đăng nhập (trừ 422) đều có `code` cố định. FE rẽ nh
 | 401 | `invalid_credentials` | Sai tài khoản hoặc mật khẩu | `error.invalid_credentials`, xoá ô mật khẩu |
 | 401 | `otp_required` | Tài khoản bật 2FA, chưa gửi `otp` | Hiện ô OTP, giữ username/mật khẩu |
 | 401 | `otp_invalid` | Đã gửi `otp` nhưng sai | `error.otp_invalid`, xoá ô OTP |
+| 403 | `no_access` | Đăng nhập IAM đúng, nhưng tài khoản chưa được cấp quyền vào DTS | `error.no_access`, xoá ô mật khẩu |
 | 403 | `login_forbidden` | IAM chặn tài khoản này | `error.login_forbidden` |
 | 502 | `iam_unavailable` | IAM không phản hồi, hoặc trả dữ liệu không hợp lệ | `error.iam_unavailable` |
 | 4xx khác | `login_failed` | Lỗi khác từ IAM | `error.generic` |
@@ -136,6 +140,7 @@ Mọi lỗi đăng nhập (trừ 422) đều có `code` cố định. FE rẽ nh
     otp_required           → hiện ô OTP, giữ nguyên username/mật khẩu, gửi lại kèm otp
     otp_invalid            → báo "Mã OTP không đúng", xoá ô OTP
     invalid_credentials    → báo sai tài khoản hoặc mật khẩu, xoá ô mật khẩu
+    no_access              → báo tài khoản chưa được cấp quyền vào DTS (liên hệ quản trị IAM)
     login_forbidden        → báo tài khoản không được phép vào hệ thống
     iam_unavailable        → báo không kết nối được IAM
 ```
@@ -149,7 +154,7 @@ Mọi lỗi đăng nhập (trừ 422) đều có `code` cố định. FE rẽ nh
 | `debugs.token` | `accessToken` |
 | `debugs.tokenExp` | `Date.now() + expires_in * 1000` |
 
-- Khi mở app: token còn hạn thì gọi `Auth@me`. Gọi thành công thì vào app, bị 401 thì xoá token và về `/login`.
+- Khi mở app: token còn hạn thì gọi `Auth@me`. Gọi thành công thì vào app. Bị 401 hoặc `403 no_access` thì xoá token và về `/login` (kèm thông báo tương ứng). Bị `502 iam_unavailable` thì **giữ token**, hiện lỗi và nút thử lại.
 - **Đăng xuất:** xoá `debugs.token`, `debugs.tokenExp`, xoá cache React Query, về `/login`. Backend không có endpoint đăng xuất. Token đã cấp vẫn hợp lệ tới khi hết hạn, vì vậy phải xoá hẳn khỏi trình duyệt.
 - Bỏ các khoá cũ: `debugs.db.v1`, `debugs.currentUser`.
 
@@ -184,7 +189,22 @@ Authorization: Bearer <accessToken>
 |---|---|
 | `id` | UUID IAM |
 | `name` | `fullname`, IAM để trống thì dùng `username`. Backend ghi đúng chuỗi này vào lịch sử và vào `assignee` khi "Nhận sửa" |
-| `role` | Role đầu tiên. Chưa dùng, vì phân quyền chưa bật |
+| `role` | Role đầu tiên. FE không cần dùng: quyền vào DTS do backend kiểm |
+
+### 2.5. `GET ?c=User&m=access`: còn quyền vào DTS không
+
+Đây chính là endpoint được khai báo làm quyền bên IAM (mục 11). FE thường không cần gọi riêng, vì `Auth@me` và mọi endpoint khác đều qua cùng một bước kiểm. Dùng khi chỉ muốn hỏi "tôi còn quyền không" mà không cần dữ liệu.
+
+```http
+GET /web_develop/dts/backend/?c=User&m=access
+Authorization: Bearer <accessToken>
+```
+
+| HTTP | Body |
+|---|---|
+| 200 | `{ "success": true }` |
+| 403 | `{ "success": false, "error": "Forbidden", "code": "no_access", "message": "Tài khoản chưa được cấp quyền vào hệ thống DTS." }` |
+| 502 | `{ "success": false, "error": "iam_unavailable", "code": "iam_unavailable", "message": "Không kiểm tra được quyền truy cập với IAM." }` |
 
 ---
 
@@ -205,17 +225,21 @@ FE đọc `json.data`. Riêng `Auth@login` không bọc `data` (mục 2.2), và 
 |---|---|---|---|
 | 401 | `{"success":false,"error":"Unauthenticated","message":"Token is required. Pass via Authorization: Bearer <token>"}` | Thiếu token | Xoá token, chuyển `/login?next=…`, toast `error.session_expired` |
 | 401 | `{"success":false,"error":"Unauthenticated","message":"Invalid or expired token: Token expired"}` | Token hết hạn hoặc sai chữ ký | Như trên |
+| 403 | `{"success":false,"error":"Forbidden","code":"no_access","message":"…"}` | Tài khoản bị gỡ quyền vào DTS (ở **mọi** endpoint) | Xoá token, chuyển `/login`, toast `error.no_access` |
 | 404 | `{"success":false,"error":"not_found","code":"not_found","message":"Không tìm thấy bug FF-999."}` | Không có bug hoặc dự án | `error.bugNotFound` / `error.projectNotFound` / `error.not_found` |
 | 405 | `{… "code":"method_not_allowed" …}` | Gọi endpoint ghi bằng GET | Lỗi lập trình, hiện `error.generic` |
 | 409 | `{… "code":"duplicate_key" …}` | Mã dự án đã tồn tại | `error.duplicate_key` tại ô Mã |
+| 422 | `{… "code":"confirm_mismatch" …}` | Xoá mà gõ lại sai mã (mục 6.12) | Báo `error.confirm_mismatch` tại ô xác nhận |
 | 413 | `{"message":"…"}` | Body vượt giới hạn của PHP (đã thử 41 MB vẫn qua) | `error.generic` |
 | 422 | `{… "code":"invalid_key" …}` | Mã dự án sai định dạng | `error.invalid_key` tại ô Mã |
+| 422 | `{… "code":"otp_required" …}` | Thao tác lưu/xoá chưa gửi `otp` (mục 12) | Mở hộp thoại OTP, gửi lại |
+| 422 | `{… "code":"otp_invalid" …}` | Mã OTP sai hoặc hết hạn | Báo `error.otp_invalid`, xoá ô OTP, giữ hộp thoại |
 | 422 | `{… "code":"invalid_image" …}` | Ảnh không phải PNG/JPEG/WebP/GIF, hoặc URL ảnh không thuộc bug này | `error.invalid_image` |
 | 422 | `{… "code":"image_too_large" …}` | Ảnh lớn hơn 5 MB sau khi giải mã | `error.image_too_large` |
 | 422 | `{"success":false,"error":"Validation Error","errors":{"<trường>":["…"]}}` | Lỗi validate từng trường | Gắn lỗi vào ô theo tên trường |
 | 500 | `{… "code":"upload_failed" …}` | Không ghi được ảnh lên đĩa | `error.upload_failed` |
 | 500 | `{"success":false,"error":"Internal Server Error","message":"…"}` | Lỗi không lường trước | `error.generic` |
-| 502 | `{… "code":"iam_unavailable" …}` | Không lấy được danh bạ IAM | `error.iam_unavailable` |
+| 502 | `{… "code":"iam_unavailable" …}` | IAM không trả lời (danh bạ, hoặc bước kiểm quyền vào DTS ở mọi endpoint) | `error.iam_unavailable`, **không** đăng xuất |
 
 Lỗi nghiệp vụ luôn có dạng:
 
@@ -318,7 +342,8 @@ interface ReleaseStatus {
 | `YS.updateBug(code, data, who)` | `POST ?c=Bug&m=update&code=` | Bỏ `who` |
 | `YS.changeStatus(code, status, who)` | `POST ?c=Bug&m=changeStatus&code=` | Bỏ `who` |
 | `YS.assign(code, assignee, who)` | `POST ?c=Bug&m=assign&code=` | Bỏ `who` |
-| `YS.deleteBug(code)` | `POST ?c=Bug&m=destroy&code=` | — |
+| `YS.deleteBug(code)` | `POST ?c=Bug&m=destroy&code=` | Thêm `confirm` (mã gõ lại) và `otp` |
+| (mới) | `POST ?c=Project&m=destroy&key=` | Xoá dự án, cần `confirm` và `otp` |
 | Mảng tên cố định `MS` | `GET ?c=User&m=index` | Danh bạ IAM, dùng `name` |
 | `debugs.currentUser` (`$S()`) | `GET ?c=Auth&m=me` | Dùng `data.name` |
 | Kiểm tra release `kS()` ở client | Giữ nguyên, hoặc `GET ?c=Project&m=releaseStatus` | Cùng một quy tắc |
@@ -374,6 +399,8 @@ Sắp theo `id` tăng dần. `mustFixOpen` dùng thẳng cho số trên sidebar.
 ### 6.2. Tạo dự án
 
 Màn hình: hộp thoại `new-project-dialog` (`project.title`).
+
+> 🔐 **Cần OTP** khi `OTP_ENABLED=true`: thêm `"otp": "123456"` vào body (mục 12).
 
 **Request**
 
@@ -554,6 +581,8 @@ Thanh tiến trình và lịch sử dựng từ `history`, như hiện nay:
 
 Màn hình: `/bugs/new` (form `BugFormPage`). Giữ nguyên hàm chuyển dữ liệu form `Ce()` đang có; dữ liệu sau `Ce()` gửi thẳng lên được.
 
+> 🔐 **Cần OTP** khi `OTP_ENABLED=true`: thêm `"otp": "123456"` vào body (mục 12). OTP sai thì không tốn số thứ tự bug và không ghi ảnh.
+
 **Request**
 
 ```http
@@ -645,6 +674,8 @@ Về ảnh:
 ### 6.7. Sửa bug
 
 Màn hình: `/bugs/:code/edit`. Form khoá ô dự án (`form.projectLocked`). Hàm `te()` của form đã tách `projectId` ra trước khi gửi, giữ nguyên.
+
+> 🔐 **Cần OTP** khi `OTP_ENABLED=true`: thêm `"otp": "123456"` vào body (mục 12).
 
 **Request**
 
@@ -789,16 +820,24 @@ Giao lại đúng người đang giữ bug thì không ghi lịch sử. Bỏ gia
 
 ### 6.10. Xoá bug
 
-Màn hình: chi tiết bug → `action.deleteBug`, xác nhận bằng hộp thoại `detail.deleteTitle`.
+Màn hình: chi tiết bug → `action.deleteBug` → hộp thoại xoá (mục 6.12).
+
+🔐 **Cần OTP và gõ lại mã bug.**
 
 **Request**
 
 ```http
 POST /web_develop/dts/backend/?c=Bug&m=destroy&code=FF-007
 Authorization: Bearer <accessToken>
+Content-Type: application/json
+
+{ "confirm": "FF-007", "otp": "123456" }
 ```
 
-Body để trống hoặc `{}`.
+| Trường | Bắt buộc | Ghi chú |
+|---|:-:|---|
+| `confirm` | ✔ | Người dùng **tự gõ lại** mã bug. Phải trùng `code` trên URL (không phân biệt hoa thường) |
+| `otp` | ✔ khi bật OTP | 6 chữ số |
 
 **Response 200**
 
@@ -808,11 +847,67 @@ Body để trống hoặc `{}`.
 
 Xoá hẳn bug, lịch sử và file ảnh. Mã `FF-007` không được cấp lại. Sau khi xoá: `removeQueries(["bugs", code])` và invalidate `["bugs"]`, cộng thêm invalidate `["projects"]` (vì `mustFixOpen` có thể đổi).
 
-**Lỗi:** `404 not_found`.
+**Lỗi:** `422 confirm_mismatch` (gõ sai mã), `422 otp_required` / `otp_invalid`, `404 not_found`. Lỗi nào cũng không xoá gì.
 
 ---
 
-### 6.11. Danh bạ người dùng (người báo, người sửa)
+### 6.11. Xoá dự án
+
+Màn hình: menu của dự án trên sidebar → **Xoá dự án** → hộp thoại xoá (mục 6.12).
+
+🔐 **Cần OTP và gõ lại mã dự án.** Xoá **toàn bộ** bug, đề xuất tính năng, lịch sử, ảnh và video của dự án.
+
+**Request**
+
+```http
+POST /web_develop/dts/backend/?c=Project&m=destroy&key=FF
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+
+{ "confirm": "FF", "otp": "123456" }
+```
+
+| Trường | Bắt buộc | Ghi chú |
+|---|:-:|---|
+| `key` (URL) | ✔ | Mã dự án |
+| `confirm` | ✔ | Người dùng tự gõ lại **mã dự án** (`FF`, không phải tên dự án). Không phân biệt hoa thường |
+| `otp` | ✔ khi bật OTP | 6 chữ số |
+
+**Response 200**
+
+```json
+{ "success": true, "data": { "project": "FF", "deletedBugs": 7, "deletedFeatures": 3 } }
+```
+
+- Sau khi xoá: invalidate `["projects"]`, `["bugs"]`, `["features"]`, rồi chuyển về `/all` nếu đang đứng trong dự án vừa xoá.
+- Mã dự án được giải phóng: tạo lại dự án `FF` thì bug bắt đầu lại từ `FF-001`.
+
+**Lỗi:** `422 confirm_mismatch`, `422 otp_required` / `otp_invalid`, `404 not_found`. Lỗi nào cũng không xoá gì.
+
+---
+
+### 6.12. Hộp thoại xoá (dùng chung cho bug, đề xuất, dự án)
+
+```
+┌ Xoá bug FF-007? ───────────────────────────────┐
+│ ⚠ Xoá hẳn, không khôi phục được.               │
+│   (Xoá dự án: "Sẽ xoá 7 bug và 3 đề xuất.")    │
+│                                                │
+│ Gõ FF-007 để xác nhận: [ FF-007          ]     │
+│ Mã OTP:                [ 1 2 3 4 5 6 ]         │
+│                                                │
+│                     [ Huỷ ]  [ Xoá ]           │
+└────────────────────────────────────────────────┘
+```
+
+- Nút **Xoá** chỉ bật khi ô xác nhận khớp mã (so không phân biệt hoa thường, bỏ khoảng trắng) **và** OTP đủ 6 số. Server vẫn kiểm lại cả hai.
+- Ô xác nhận **không** tự điền sẵn mã, không cho dán sẵn từ nút "sao chép". Mục đích là người dùng đọc và gõ lại.
+- Với dự án: số bug và đề xuất đếm từ danh sách FE đã tải (lọc theo `projectId`).
+- `confirm_mismatch` → báo lỗi ở ô xác nhận. `otp_invalid` → xoá ô OTP, giữ hộp thoại.
+
+---
+
+### 6.13. Danh bạ người dùng (người báo, người sửa)
 
 Màn hình: ô `field.reporter` và `field.assignee` trong form, ô chọn người sửa ở chi tiết bug. Thay mảng tên cố định `MS`.
 
@@ -896,10 +991,13 @@ export async function api<T>(c: string, m: string, { method = 'GET', query = {},
 
   const json = await res.json().catch(() => null);
 
-  if (res.status === 401) {               // đăng nhập đi qua login() riêng, nên mọi 401 ở đây đều là mất phiên
+  // Đăng nhập đi qua login() riêng, nên 401 ở đây là mất phiên, 403 no_access là bị gỡ quyền vào DTS.
+  // 502 iam_unavailable KHÔNG đăng xuất: IAM chết tạm thời, giữ token để thử lại.
+  if (res.status === 401 || json?.code === 'no_access') {
+    const code = res.status === 401 ? 'session_expired' : 'no_access';
     auth.clear();
-    onUnauthenticated();               // xoá cache, chuyển /login?next=…, toast error.session_expired
-    throw new BS('session_expired');
+    onUnauthenticated(code);           // xoá cache, chuyển /login?next=…, toast error.<code>
+    throw new BS(code);
   }
   if (!res.ok || json?.success === false) {
     if (json?.code) throw new BS(json.code);
@@ -925,7 +1023,11 @@ export const YS = {
     data<Bug>(api('Bug', 'changeStatus', { method: 'POST', query: { code }, body: { status } })),
   assign: (code: string, assignee: string | null) =>
     data<Bug>(api('Bug', 'assign', { method: 'POST', query: { code }, body: { assignee } })),
-  deleteBug: (code: string) => api<{ success: true }>('Bug', 'destroy', { method: 'POST', query: { code }, body: {} }).then(() => undefined),
+  deleteBug: (code: string, confirm: string, otp: string) =>
+    api<{ success: true }>('Bug', 'destroy', { method: 'POST', query: { code }, body: { confirm, otp } }).then(() => undefined),
+  deleteProject: (key: string, confirm: string, otp: string) =>
+    data<{ project: string; deletedBugs: number; deletedFeatures: number }>(
+      api('Project', 'destroy', { method: 'POST', query: { key }, body: { confirm, otp } })),
   listUsers: (q?: string) => data<Person[]>(api('User', 'index', { query: { q } })),
   me: () => data<Me>(api('Auth', 'me')),
 };
@@ -945,7 +1047,7 @@ export async function login(username: string, password: string, otp?: string) {
     return;
   }
   if (res.status === 422 && json?.errors) throw new ValidationError(json.errors);
-  // invalid_credentials | otp_required | otp_invalid | login_forbidden | iam_unavailable | login_failed
+  // invalid_credentials | otp_required | otp_invalid | no_access | login_forbidden | iam_unavailable | login_failed
   throw new BS(json?.code ?? 'generic');
 }
 ```
@@ -970,6 +1072,17 @@ Thêm vào cả 4 ngôn ngữ. Khoá `error.storage_full` không còn dùng, xo�
 | `error.invalid_credentials` | Sai tên đăng nhập hoặc mật khẩu. | Incorrect username or password. | 帳號或密碼錯誤。 | 账号或密码错误。 |
 | `error.otp_required` | Vui lòng nhập mã OTP. | Please enter your OTP code. | 請輸入 OTP 驗證碼。 | 请输入 OTP 验证码。 |
 | `error.otp_invalid` | Mã OTP không đúng. | Incorrect OTP code. | OTP 驗證碼錯誤。 | OTP 验证码错误。 |
+| `otp.title` | Xác nhận bằng mã OTP | Confirm with OTP | 以 OTP 驗證碼確認 | 使用 OTP 验证码确认 |
+| `otp.desc` | Nhập mã 6 số đang hiện trên OTP Portal của bạn. Mã đổi sau mỗi 30 giây. | Enter the 6-digit code shown in your OTP Portal. The code changes every 30 seconds. | 請輸入 OTP Portal 上顯示的 6 位數代碼，代碼每 30 秒更新一次。 | 请输入 OTP Portal 上显示的 6 位数代码，代码每 30 秒更新一次。 |
+| `otp.confirm` | Xác nhận | Confirm | 確認 | 确认 |
+| `error.no_access` | Tài khoản chưa được cấp quyền vào DTS. Vui lòng liên hệ quản trị viên. | Your account does not have access to DTS. Please contact your administrator. | 您的帳號尚未獲得 DTS 的存取權限，請聯絡管理員。 | 您的账号尚未获得 DTS 的访问权限，请联系管理员。 |
+| `error.confirm_mismatch` | Mã xác nhận không khớp. Hãy gõ lại đúng mã. | The confirmation code does not match. Please type it exactly. | 確認代碼不符，請正確輸入。 | 确认代码不符，请正确输入。 |
+| `delete.irreversible` | Xoá hẳn, không khôi phục được. | This permanently deletes it and cannot be undone. | 將永久刪除，無法復原。 | 将永久删除，无法恢复。 |
+| `delete.typeToConfirm` | Gõ {code} để xác nhận | Type {code} to confirm | 輸入 {code} 以確認 | 输入 {code} 以确认 |
+| `delete.projectTitle` | Xoá dự án {name}? | Delete project {name}? | 刪除專案 {name}？ | 删除项目 {name}？ |
+| `delete.projectImpact` | Sẽ xoá {bugs} bug và {features} đề xuất tính năng. | This will delete {bugs} bugs and {features} feature requests. | 將刪除 {bugs} 個錯誤與 {features} 個功能需求。 | 将删除 {bugs} 个缺陷和 {features} 个功能需求。 |
+| `delete.featureTitle` | Xoá đề xuất {code}? | Delete feature request {code}? | 刪除功能需求 {code}？ | 删除功能需求 {code}？ |
+| `toast.projectDeleted` | Đã xoá dự án {key} | Project {key} deleted | 已刪除專案 {key} | 已删除项目 {key} |
 | `error.login_forbidden` | Tài khoản này không được phép đăng nhập vào hệ thống. | This account is not allowed to sign in to this system. | 此帳號不允許登入本系統。 | 此账号不允许登录本系统。 |
 | `error.session_expired` | Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại. | Your session has expired. Please sign in again. | 登入已逾時，請重新登入。 | 登录已过期，请重新登录。 |
 | `error.iam_unavailable` | Không kết nối được hệ thống đăng nhập (IAM). Vui lòng thử lại sau. | Cannot reach the sign-in service (IAM). Please try again later. | 無法連線至登入系統（IAM），請稍後再試。 | 无法连接登录系统（IAM），请稍后再试。 |
@@ -1015,16 +1128,178 @@ php artisan db:seed --class=DemoDataSeeder
 
 ---
 
-## 11. Để sau: phân quyền IAM
+## 11. Setup quyền vào DTS trên IAM
 
-Hiện **chưa bật**. Token hợp lệ là gọi được mọi endpoint. Khi cần bật:
+DTS chỉ có **một quyền: được vào hệ thống**, làm giống hệt App VCM. Bên IAM chỉ khai báo **một** API, không khai từng endpoint. Ai có role chứa quyền này thì đăng nhập được và dùng mọi chức năng; ai không có thì bị từ chối ngay ở bước đăng nhập.
 
-1. Sửa `IAM_ENDPOINT_PREFIX` trong `backend/.env` thành `/web_develop/dts/backend/` (hiện còn giá trị cũ của template IPQC).
-2. Khai các endpoint ở mục 6 vào bảng `apis` của IAM, gán vào permission và role. Endpoint phải khớp từng byte, ví dụ `/web_develop/dts/backend/?c=Bug&m=store`.
-3. Đặt `IAM_PERMISSION_ENABLED=true`. Từ đó, endpoint mà role không có quyền sẽ trả:
+### 11.1. Cơ chế
 
-```json
-{ "success": false, "error": "Forbidden", "message": "Bạn không có quyền thực hiện thao tác này." }
+```
+Đăng nhập / mỗi request ──► Backend DTS ──POST getApiByUsername {username}──► IAM
+                                     ◄── danh sách endpoint của mọi role của user
+Có "/dts/backend/?c=User&m=access" trong danh sách? ── có  → cho qua (nhớ 60 giây)
+                                                   └─ không → 403 no_access
 ```
 
-Khi đó FE cần thêm xử lý 403: ẩn nút theo quyền và hiện thông báo không đủ quyền. `Auth@login` và `Auth@verifyUserOTP` luôn công khai.
+- Tra theo **username**, không theo role ghi trong token. Nhờ vậy cấp quyền thì vào được **ngay**, gỡ quyền thì có hiệu lực **chậm nhất sau 60 giây** (`IAM_ACCESS_CACHE_SECONDS`), dù token còn hạn 60 ngày.
+- IAM không trả lời thì trả `502 iam_unavailable`, không chặn nhầm thành `no_access`.
+- Các endpoint công khai (`Auth@login`, `Auth@verifyUserOTP`, dev tool) không qua bước này.
+
+Bảng so sánh với App VCM (đã có sẵn trong IAM):
+
+| | App VCM (đang chạy) | DTS (cần tạo) |
+|---|---|---|
+| Subsystem `code` | `app_vcm` | `dts` |
+| API `endpoint` | `/app_vcm/backend/?c=User&m=access` | `/dts/backend/?c=User&m=access` |
+| Permission | `app_vcm.access` | `dts.access` |
+| Role | `admin` (đang có 2 user) | `dts_user` (mới), hoặc gắn vào role sẵn có |
+
+### 11.2. Các bước trên cổng IAM
+
+Đăng nhập cổng IAM `http://192.168.110.2/web_develop/iam/` bằng tài khoản quản trị IAM.
+
+**Bước 1: Tạo subsystem.** Vào **Manage Subsystems** → **Add New Subsystem**.
+
+| Ô | Giá trị |
+|---|---|
+| Code | `dts` |
+| Name | `Debugging System` |
+
+**Bước 2: Tạo API.** Vào **API Management** → **Add API**.
+
+| Ô | Giá trị |
+|---|---|
+| Endpoint | `/dts/backend/?c=User&m=access` |
+| Subsystem | `dts` |
+
+> ⚠️ Endpoint phải **đúng từng ký tự**: bắt đầu bằng `/`, không có `http://`, không có `web_develop`, có dấu `/` trước `?`, đúng hoa thường `User`, `access`. Sai một ký tự là không ai vào được.
+
+**Bước 3: Tạo permission và gắn API.** Vào **Manage Permissions** → **Add Permission**.
+
+| Ô | Giá trị |
+|---|---|
+| Subsystem | `dts` |
+| Name | `dts.access` |
+| Description | `Được vào Debugging System` |
+
+Lưu xong, mở permission `dts.access` → **Select APIs** → chọn `/dts/backend/?c=User&m=access` → lưu. Cột **Associated APIs** phải hiện đúng endpoint này.
+
+**Bước 4: Tạo role và gắn permission.** Vào **Manage Roles** → **Add New Role**.
+
+| Ô | Giá trị |
+|---|---|
+| Name | `dts_user` |
+| Description | `Người dùng Debugging System` |
+| Permissions | Tick `dts.access` |
+
+Muốn một role sẵn có (ví dụ `admin`) cũng vào được DTS thì sửa role đó và tick thêm `dts.access`, như App VCM đang làm với `admin`.
+
+**Bước 5: Cấp quyền cho người dùng.** Vào **User Management** → **Edit User** từng người → thêm role `dts_user` → lưu.
+
+**Bước 6: Bật kiểm quyền ở backend DTS.** Sửa `backend/.env`:
+
+```env
+IAM_ENDPOINT_PREFIX=/dts/backend/      # đã đặt sẵn
+IAM_PERMISSION_ENABLED=true            # đổi từ false
+# IAM_ACCESS_CACHE_SECONDS=60          # tuỳ chọn: gỡ quyền có hiệu lực sau tối đa bấy nhiêu giây
+```
+
+Không cần khởi động lại, request kế tiếp đọc cấu hình mới. Phải làm bước này **sau** bước 1–5: bật trước khi IAM có quyền `dts.access` thì mọi người đều nhận `no_access`.
+
+### 11.3. Kiểm tra sau khi setup
+
+1. Đăng nhập DTS bằng một tài khoản **có** role `dts_user` → nhận token (mục 9).
+2. Đăng nhập bằng tài khoản **không có** role đó → `403` với `"code": "no_access"`, không có `accessToken`.
+3. Gỡ role khỏi tài khoản ở bước 1 → trong vòng 60 giây, request kế tiếp của người đó trả `403 no_access`.
+
+Gặp sự cố:
+
+| Hiện tượng | Nguyên nhân thường gặp |
+|---|---|
+| Ai cũng `no_access`, kể cả người đã cấp role | Endpoint bước 2 gõ sai, hoặc `IAM_ENDPOINT_PREFIX` không phải `/dts/backend/`, hoặc permission chưa gắn API (bước 3) |
+| Một người cụ thể bị `no_access` | Chưa gán role cho người đó, hoặc role chưa tick `dts.access` |
+| Mọi request `502 iam_unavailable` | Backend không gọi được IAM: kiểm tra `API_BASE_URL` |
+| Cần mở lại cho mọi người ngay (IAM có sự cố) | Đặt `IAM_PERMISSION_ENABLED=false`: ai đăng nhập IAM được là vào được |
+
+### 11.4. Thu hồi quyền
+
+- Gỡ role `dts_user` khỏi người dùng, hoặc bỏ tick `dts.access` khỏi role. IAM xoá hẳn liên kết nên có hiệu lực ngay ở lần kiểm kế tiếp.
+- **Đừng** thu hồi bằng cách chỉ đổi trạng thái của role: hàm `getApiByUsername` của IAM không xét cột trạng thái của role, nên người có role đó vẫn vào được.
+- Xoá API `/dts/backend/?c=User&m=access` bên IAM là **khoá DTS với tất cả mọi người**.
+- Đặt `IAM_ACCESS_CACHE_SECONDS=0` nếu cần thu hồi có hiệu lực tức thì (đổi lại mỗi request phải hỏi IAM một lần).
+
+---
+
+## 12. OTP xác nhận thao tác lưu/xoá
+
+### 12.1. Thao tác nào cần OTP
+
+| Endpoint | Thao tác |
+|---|---|
+| `POST ?c=Project&m=store` | Tạo dự án |
+| `POST ?c=Bug&m=store` | Báo bug mới |
+| `POST ?c=Bug&m=update` | Sửa bug (kể cả thêm/xoá ảnh) |
+| `POST ?c=Bug&m=destroy` | Xoá bug (kèm gõ lại mã, mục 6.10) |
+| `POST ?c=Project&m=destroy` | Xoá dự án (kèm gõ lại mã dự án, mục 6.11) |
+| `POST ?c=Feature&m=store` / `update` / `destroy` | Đề xuất tính năng (xem feature-request-api.md) |
+
+**Không** cần OTP: mọi thao tác đọc, đổi trạng thái (`changeStatus`) và giao người (`assign`). Kéo thả Kanban liên tục mà lần nào cũng hỏi mã thì không dùng nổi. Danh sách nằm ở `api.otp_routes` trong `backend/config/api.php`; muốn bắt thêm thì thêm dòng `'Bug@changeStatus'`, `'Bug@assign'`, không phải sửa code.
+
+Bật tắt bằng `OTP_ENABLED` trong `backend/.env`. Khi tắt, mọi thứ chạy như chưa có OTP.
+
+### 12.2. Người dùng lấy mã ở đâu
+
+Mã 6 số, đổi mỗi 30 giây, xem trên **OTP Portal** của công ty (`?c=Otp&m=index`). Đây là mã TOTP gắn với tài khoản IAM, giống mã dùng khi đăng nhập 2FA. IAM chấp nhận mã của nhịp hiện tại và một nhịp trước/sau, nên người dùng có khoảng 60–90 giây để nhập.
+
+### 12.3. Request
+
+Gửi mã trong body cùng dữ liệu, trường `otp`:
+
+```http
+POST /web_develop/dts/backend/?c=Bug&m=store
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+
+{ "projectId": 1, "title": "…", …, "otp": "123456" }
+```
+
+Backend kiểm OTP **trước khi** làm bất cứ việc gì: OTP sai thì không ghi DB, không ghi file ảnh, không tốn số thứ tự bug. Trường `otp` không bị lưu lại.
+
+### 12.4. Response lỗi
+
+| HTTP | `code` | Ý nghĩa | FE xử lý |
+|---|---|---|---|
+| 422 | `otp_required` | Chưa gửi `otp` | Mở hộp thoại OTP, giữ nguyên dữ liệu form |
+| 422 | `otp_invalid` | Mã sai, hết hạn, hoặc không đủ 6 chữ số | Báo `error.otp_invalid`, xoá ô mã, giữ hộp thoại để nhập lại |
+| 502 | `iam_unavailable` | IAM không kiểm được mã | Báo `error.iam_unavailable`, giữ dữ liệu form để thử lại |
+
+```json
+{ "success": false, "error": "otp_required", "code": "otp_required", "message": "Thao tác này cần mã OTP." }
+```
+
+### 12.5. Luồng trên giao diện
+
+```
+Bấm Lưu / Báo bug / Tạo dự án / Xoá
+  → mở hộp thoại OTP (otp.title, otp.desc, 6 ô số, nút otp.confirm)
+  → gửi request kèm "otp"
+      200/201          → đóng hộp thoại, làm tiếp như hiện tại
+      otp_invalid      → báo lỗi trong hộp thoại, xoá ô mã, cho nhập lại
+      iam_unavailable  → đóng hộp thoại, toast lỗi, giữ nguyên form
+      lỗi khác (422 validate, 404…) → đóng hộp thoại, xử lý như hiện tại
+```
+
+- Hỏi mã **ngay khi bấm**, không cần đợi server trả `otp_required`, để người dùng chỉ phải bấm một lần. Vẫn xử lý `otp_required` cho trường hợp backend vừa bật OTP mà FE chưa biết.
+- Với **Xoá bug**: gộp ô OTP vào hộp thoại xác nhận xoá có sẵn.
+- Ô nhập: `inputmode="numeric"`, `autocomplete="one-time-code"`, tự gửi khi đủ 6 số.
+- Hàm `api()` ở mục 7 không cần sửa: `otp_required` và `otp_invalid` đã đi ra thành `BS(code)` như mọi lỗi nghiệp vụ khác.
+
+### 12.6. ⚠️ Giới hạn bảo mật hiện tại
+
+OTP hiện chỉ có tác dụng **xác nhận thao tác** (tránh lưu hay xoá nhầm), **chưa phải hàng rào chống người cố tình làm giả**:
+
+- IAM `?c=OtpController&m=getUserOTP&user_uuid=…` trả mã OTP hiện tại của **bất kỳ ai** mà **không cần đăng nhập**. Đã thử với một UUID ngẫu nhiên: IAM vẫn trả mã.
+- UUID của mọi người dùng lấy được công khai qua `?c=UserController&m=getAllUsers`, endpoint này cũng không cần đăng nhập.
+- Theo README của OTP Portal, khoá sinh mã chính là UUID của người dùng, không có bí mật riêng.
+
+Muốn OTP thực sự bảo vệ được, phải sửa phía IAM: bắt đăng nhập (và chỉ trả mã của chính mình) ở `getUserOTP` và `getAllUsers`, và sinh khoá OTP ngẫu nhiên riêng cho từng người thay vì dùng UUID. Việc này cũng ảnh hưởng đến 2FA lúc đăng nhập của mọi hệ dùng IAM.

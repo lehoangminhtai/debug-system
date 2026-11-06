@@ -1,9 +1,18 @@
 import { ShieldAlert, Target, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useI18n } from '@/i18n'
-import { PLATFORM_ICON, SEVERITY_META, STATUS_META, TONES, type Tone } from '@/lib/meta'
+import {
+  FEATURE_STATUS_META,
+  PLATFORM_ICON,
+  PLATFORM_TONE,
+  PRIORITY_META,
+  SEVERITY_META,
+  STATUS_META,
+  TONES,
+  type Tone,
+} from '@/lib/meta'
 import { cn } from '@/lib/utils'
-import type { Platform, Severity, Status } from '@/types'
+import type { FeatureStatus, Platform, Priority, Severity, Status } from '@/types'
 
 interface PillProps {
   tone: Tone
@@ -47,12 +56,17 @@ export function SeverityBadge({ severity }: { severity: Severity }) {
   )
 }
 
-export function PlatformBadge({ platform }: { platform: Platform }) {
+/** Một hoặc nhiều nền tảng (bug có thể ảnh hưởng nhiều nền tảng) */
+export function PlatformBadge({ platform }: { platform: Platform | Platform[] }) {
   const { t } = useI18n()
   return (
-    <Pill tone="neutral" icon={PLATFORM_ICON[platform]}>
-      {t(`platform.${platform}`)}
-    </Pill>
+    <>
+      {[platform].flat().map((p) => (
+        <Pill key={p} tone={PLATFORM_TONE[p]} icon={PLATFORM_ICON[p]}>
+          {t(`platform.${p}`)}
+        </Pill>
+      ))}
+    </>
   )
 }
 
@@ -70,6 +84,26 @@ export function MustFixBadge() {
   return (
     <Pill tone="destructive" icon={ShieldAlert}>
       {t('handling.mustFixShort')}
+    </Pill>
+  )
+}
+
+export function PriorityBadge({ priority }: { priority: Priority }) {
+  const { t } = useI18n()
+  const m = PRIORITY_META[priority]
+  return (
+    <Pill tone={m.tone} icon={m.icon}>
+      {t(`priority.${priority}`)}
+    </Pill>
+  )
+}
+
+export function FeatureStatusBadge({ status }: { status: FeatureStatus }) {
+  const { t } = useI18n()
+  const m = FEATURE_STATUS_META[status]
+  return (
+    <Pill tone={m.tone} icon={m.icon}>
+      {t(`featureStatus.${status}`)}
     </Pill>
   )
 }

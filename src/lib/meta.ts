@@ -6,14 +6,16 @@ import {
   CircleCheck,
   CircleDashed,
   CircleDot,
+  CircleSlash,
   Equal,
+  ThumbsUp,
   Monitor,
   OctagonAlert,
   Server,
   Smartphone,
   type LucideIcon,
 } from 'lucide-react'
-import type { Platform, Severity, Status } from '@/types'
+import type { FeatureStatus, Platform, Priority, Severity, Status } from '@/types'
 
 export const TONES = {
   destructive: 'bg-destructive-bg text-destructive-text',
@@ -59,12 +61,26 @@ export const PLATFORM_ICON: Record<Platform, LucideIcon> = {
   backend: Server,
   frontend: Monitor,
   mobile: Smartphone,
-  window: AppWindow,
+  windows: AppWindow,
 }
 
 export const PLATFORM_TONE: Record<Platform, Tone> = {
   backend: 'info',
   frontend: 'primary',
   mobile: 'warning',
-  window: 'success',
+  windows: 'success',
+}
+
+export const PRIORITY_META: Record<Priority, Meta> = {
+  high: { tone: 'destructive', icon: ChevronsUp },
+  medium: { tone: 'info', icon: Equal },
+  low: { tone: 'neutral', icon: ChevronDown },
+}
+
+export const FEATURE_STATUS_META: Record<FeatureStatus, Meta> = {
+  new: { tone: 'neutral', icon: CircleDashed },
+  accepted: { tone: 'primary', icon: ThumbsUp },
+  in_progress: { tone: 'warning', icon: CircleDot },
+  done: { tone: 'success', icon: CheckCheck },
+  rejected: { tone: 'destructive', icon: CircleSlash },
 }

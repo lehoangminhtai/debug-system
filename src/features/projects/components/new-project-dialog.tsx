@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { FileText, FolderKanban, Hash, Loader2 } from 'lucide-react'
 import { useForm } from 'react-hook-form'
@@ -17,12 +18,12 @@ import {
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n'
-import { PROJECT_KEY_PATTERN } from '@/lib/rules'
+import { OtpDialog } from '@/components/common/otp-dialog'
 import { ApiError } from '@/services/api'
 import { errorMessage, useCreateProject } from '@/services/queries'
 
 const schema = z.object({
-  key: z.string().trim().regex(PROJECT_KEY_PATTERN, 'v.keyFormat'),
+  key: z.string().trim(), // tạm thời không validate ở FE, server kiểm tra (invalid_key / duplicate_key)
   name: z.string().trim().min(1, 'v.required').max(60, 'v.tooLong|60'),
   description: z.string().trim().min(1, 'v.required').max(500, 'v.tooLong|500'),
 })
@@ -32,23 +33,23 @@ interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreated?: () => void
-  existingKeys: string[]
 }
 
-export function NewProjectDialog({ open, onOpenChange, onCreated, existingKeys }: Props) {
+export function NewProjectDialog({ open, onOpenChange, onCreated }: Props) {
   const { t } = useI18n()
   const navigate = useNavigate()
   const create = useCreateProject()
   const form = useForm<Values>({
-    resolver: zodResolver(
-      schema.refine((v) => !existingKeys.includes(v.key), { path: ['key'], message: 'error.duplicate_key' }),
-    ),
+    resolver: zodResolver(schema),
     defaultValues: { key: '', name: '', description: '' },
   })
   const { errors } = form.formState
 
-  const onSubmit = form.handleSubmit((values) =>
-    create.mutateAsync(values).then(
+  // Hợp lệ → hỏi OTP rồi mới gửi (doc API §12)
+  const [pending, setPending] = useState<Values | null>(null)
+  const onSubmit = form.handleSubmit((values) => setPending(values))
+  const createWithOtp = (otp: string) =>
+    create.mutateAsync({ input: pending!, otp }).then(
       (project) => {
         toast.success(t('toast.projectCreated', { name: project.name }))
         onOpenChange(false)
@@ -57,12 +58,12 @@ export function NewProjectDialog({ open, onOpenChange, onCreated, existingKeys }
         navigate(`/${project.key}`)
       },
       (error) => {
+        if (error instanceof ApiError && error.code.startsWith('otp_')) throw error // báo lỗi ngay trong hộp thoại OTP
         if (error instanceof ApiError && (error.code === 'duplicate_key' || error.code === 'invalid_key'))
           form.setError('key', { message: `error.${error.code}` }, { shouldFocus: true })
         else toast.error(errorMessage(error))
       },
-    ),
-  )
+    )
 
   const keyField = form.register('key')
 
@@ -87,21 +88,8 @@ export function NewProjectDialog({ open, onOpenChange, onCreated, existingKeys }
             icon={Hash}
             hint={t('project.keyHint')}
             error={errors.key?.message}
-            required
           >
-            {(c) => (
-              <Input
-                {...c}
-                {...keyField}
-                onChange={(e) => {
-                  e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '')
-                  return keyField.onChange(e)
-                }}
-                maxLength={4}
-                autoComplete="off"
-                className="w-28 font-mono uppercase"
-              />
-            )}
+            {(c) => <Input {...c} {...keyField} autoComplete="off" className="w-28 font-mono" />}
           </Field>
           <Field id="project-name" label={t('field.name')} icon={FolderKanban} error={errors.name?.message} required>
             {(c) => <Input {...c} {...form.register('name')} placeholder={t('project.namePlaceholder')} />}
@@ -130,6 +118,7 @@ export function NewProjectDialog({ open, onOpenChange, onCreated, existingKeys }
             </Button>
           </DialogFooter>
         </form>
+        <OtpDialog open={!!pending} onOpenChange={(o) => !o && setPending(null)} onSubmit={createWithOtp} />
       </DialogContent>
     </Dialog>
   )

@@ -4,20 +4,40 @@ import { Link } from 'react-router-dom'
 import { EmptyState, ErrorState } from '@/components/common/states'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import type { SortingState } from '@tanstack/react-table'
 import { useI18n } from '@/i18n'
+import { useBugs } from '@/services/queries'
+import type { BugQuery } from '@/services/api'
 import { ActiveFilters, ColumnFilter, ResultCount, SearchBox } from '../components/bug-filters'
 import { BugTable } from '../components/bug-table'
 import { TablePager } from '../components/table-pager'
 import { FILTER_FIELDS, PAGE_SIZE, useBugFilters } from '../hooks/use-bug-filters'
 import { useScope } from '../hooks/use-scope'
 
+/** Cột bảng → tham số sắp xếp của API (cột không có ở đây không sắp xếp được) */
+const SORT_BY: Record<string, BugQuery['sortBy']> = {
+  code: 'code',
+  severity: 'severity',
+  status: 'status',
+  createdAt: 'created_at',
+}
+
 export function BugListPage() {
   const { t } = useI18n()
-  const { project, projects, bugs, isPending, isError, refetch } = useScope()
-  const { filters, apply, clear, isActive } = useBugFilters()
-  const visible = apply(bugs)
-  // Trang hiện tại gắn với bộ lọc: đổi bộ lọc → về trang đầu; kết quả ít đi → không vượt quá trang cuối
-  const sig = JSON.stringify(filters)
+  const { project, isPending: scopePending } = useScope()
+  const { filters, clear, isActive, useQuery } = useBugFilters()
+  // Sắp xếp do server làm (Bug@index sort_by/sort_dir); mặc định mới nhất trước
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'createdAt', desc: true }])
+  const sort = sorting[0]
+  const bugsQuery = useBugs(
+    useQuery(project?.key, [], sort ? { sortBy: SORT_BY[sort.id], sortDir: sort.desc ? 'desc' : 'asc' } : undefined),
+    !scopePending,
+  )
+  const { isError, refetch } = bugsQuery
+  const isPending = scopePending || bugsQuery.isPending
+  const visible = bugsQuery.data ?? []
+  // Trang hiện tại gắn với bộ lọc + sắp xếp: đổi → về trang đầu; kết quả ít đi → không vượt quá trang cuối
+  const sig = JSON.stringify([filters, sorting])
   const [pageState, setPageState] = useState({ sig, page: 0 })
   const lastPage = Math.max(0, Math.ceil(visible.length / PAGE_SIZE) - 1)
   const page = Math.min(pageState.sig === sig ? pageState.page : 0, lastPage)
@@ -46,7 +66,7 @@ export function BugListPage() {
             <Skeleton key={i} className="h-8" />
           ))}
         </div>
-      ) : bugs.length === 0 ? (
+      ) : visible.length === 0 && !isActive() ? (
         <div className="bg-card flex-1 rounded-lg border">
           <EmptyState
             icon={BugIcon}
@@ -59,7 +79,7 @@ export function BugListPage() {
             }
           />
         </div>
-      ) : visible.length === 0 && isActive() ? (
+      ) : visible.length === 0 ? (
         <div className="bg-card flex-1 rounded-lg border">
           <EmptyState
             icon={SearchX}
@@ -73,7 +93,7 @@ export function BugListPage() {
           />
         </div>
       ) : (
-        <BugTable bugs={visible} projects={projects} pageIndex={page} />
+        <BugTable bugs={visible} pageIndex={page} sorting={sorting} onSortingChange={setSorting} />
       )}
     </div>
   )

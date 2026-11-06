@@ -18,9 +18,9 @@ export function UserAvatar({ name, className }: { name: string; className?: stri
 export function UserName({ name, fallback }: { name: string | null; fallback: string }) {
   if (!name) return <span className="text-muted-foreground">{fallback}</span>
   return (
-    <span className="inline-flex items-center gap-1.5">
+    <span className="inline-flex max-w-full min-w-0 items-center gap-1.5">
       <UserAvatar name={name} />
-      {name}
+      <span className="truncate">{name}</span>
     </span>
   )
 }

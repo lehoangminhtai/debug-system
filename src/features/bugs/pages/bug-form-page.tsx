@@ -49,17 +49,16 @@ export function BugFormPage() {
       />
     )
 
-  const onSubmit = (values: BugFormValues) => {
+  // Lỗi không rethrow ở đây: MutationCache toast lỗi chung, riêng lỗi OTP do hộp thoại OTP hiển thị
+  const onSubmit = (values: BugFormValues, otp: string) => {
     const input = toBugInput(values)
     const { projectId, ...rest } = input // dự án không đổi khi sửa
-    const save = isEdit ? update.mutateAsync(rest) : create.mutateAsync(input)
-    return save.then(
-      (bug) => {
-        toast.success(t(isEdit ? 'toast.bugUpdated' : 'toast.bugCreated', { code: bug.code }))
-        navigate(`/bugs/${bug.code}`, { replace: true })
-      },
-      () => {}, // lỗi đã được toast tập trung (MutationCache); form giữ nguyên dữ liệu
-    )
+    void projectId
+    const save = isEdit ? update.mutateAsync({ input: rest, otp }) : create.mutateAsync({ input, otp })
+    return save.then((bug) => {
+      toast.success(t(isEdit ? 'toast.bugUpdated' : 'toast.bugCreated', { code: bug.code }))
+      navigate(`/bugs/${bug.code}`, { replace: true })
+    })
   }
 
   const project = projects.data.find((p) =>

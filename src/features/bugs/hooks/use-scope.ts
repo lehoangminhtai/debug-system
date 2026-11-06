@@ -1,15 +1,12 @@
 import { useOutletContext } from 'react-router-dom'
-import type { Bug, Project } from '@/types'
+import type { Project } from '@/types'
 
 /** Dữ liệu ScopeLayout truyền xuống trang Danh sách / Kanban */
 export interface ScopeContext {
   /** null = "Tất cả dự án" */
   project: Project | null
   projects: Project[]
-  bugs: Bug[]
   isPending: boolean
-  isError: boolean
-  refetch: () => void
 }
 
 export const useScope = () => useOutletContext<ScopeContext>()

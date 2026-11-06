@@ -12,19 +12,39 @@ import {
 import { Input } from '@/components/ui/input'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
-import { PLATFORMS, SEVERITIES, STATUSES } from '@/types'
-import { useBugFilters, type FilterField } from '../hooks/use-bug-filters'
+import { useSearchParams } from 'react-router-dom'
+import { FEATURE_STATUSES, PLATFORMS, PRIORITIES, SEVERITIES, STATUSES } from '@/types'
+import { useBugFilters, type FeatureFilterField, type FilterField } from '../hooks/use-bug-filters'
 
 const ALL = '__all'
 
-function useFilterFields() {
+/** bug: trang bug · feature: trang Tính năng mong muốn */
+export type FilterKind = 'bug' | 'feature'
+type FieldDef = { label: string; all: string; options: { value: string; label: string }[] }
+
+function useFilterFields(kind: FilterKind): Record<string, FieldDef> {
   const { t } = useI18n()
+  const platform = {
+    label: t('field.platform'),
+    all: t('filter.allPlatforms'),
+    options: PLATFORMS.map((v) => ({ value: v, label: t(`platform.${v}`) })),
+  }
+  if (kind === 'feature')
+    return {
+      platform,
+      priority: {
+        label: t('field.priority'),
+        all: t('filter.allPriorities'),
+        options: PRIORITIES.map((v) => ({ value: v, label: t(`priority.${v}`) })),
+      },
+      status: {
+        label: t('field.status'),
+        all: t('filter.allStatuses'),
+        options: FEATURE_STATUSES.map((v) => ({ value: v, label: t(`featureStatus.${v}`) })),
+      },
+    } satisfies Record<FeatureFilterField, FieldDef>
   return {
-    platform: {
-      label: t('field.platform'),
-      all: t('filter.allPlatforms'),
-      options: PLATFORMS.map((v) => ({ value: v, label: t(`platform.${v}`) })),
-    },
+    platform,
     core: {
       label: t('field.core'),
       all: t('filter.allCore'),
@@ -43,7 +63,13 @@ function useFilterFields() {
       all: t('filter.allStatuses'),
       options: STATUSES.map((v) => ({ value: v, label: t(`status.${v}`) })),
     },
-  } satisfies Record<FilterField, { label: string; all: string; options: { value: string; label: string }[] }>
+  } satisfies Record<FilterField, FieldDef>
+}
+
+/** Giá trị lọc đang chọn, đọc thẳng từ URL; giá trị không thuộc danh sách → coi như không lọc */
+function useCurrent(field: string, def?: FieldDef) {
+  const [params] = useSearchParams()
+  return def?.options.find((o) => o.value === params.get(field))
 }
 
 /**
@@ -52,18 +78,20 @@ function useFilterFields() {
  */
 export function ColumnFilter({
   field,
+  kind = 'bug',
   variant = 'header',
   className,
 }: {
-  field: FilterField
+  field: FilterField | FeatureFilterField
+  kind?: FilterKind
   variant?: 'header' | 'toolbar'
   className?: string
 }) {
   const { t } = useI18n()
-  const def = useFilterFields()[field]
-  const { filters, setFilter } = useBugFilters()
-  const value = filters[field]
-  const current = def.options.find((o) => o.value === value)
+  const def = useFilterFields(kind)[field]
+  const { setFilter } = useBugFilters()
+  const current = useCurrent(field, def)
+  const value = current?.value
   const label = t('filter.by', { col: def.label })
 
   const trigger =
@@ -143,11 +171,19 @@ export function SearchBox() {
 }
 
 /** Chip các filter đang áp dụng, mỗi chip xóa được; nhiều filter → thêm "Xóa bộ lọc" */
-export function ActiveFilters({ fields }: { fields: readonly FilterField[] }) {
+export function ActiveFilters({
+  fields,
+  kind = 'bug',
+}: {
+  fields: readonly (FilterField | FeatureFilterField)[]
+  kind?: FilterKind
+}) {
   const { t } = useI18n()
-  const defs = useFilterFields()
-  const { filters, setFilter, clear } = useBugFilters()
-  const active = fields.filter((f) => filters[f])
+  const defs = useFilterFields(kind)
+  const [params] = useSearchParams()
+  const { setFilter, clear } = useBugFilters()
+  const label = (f: string) => defs[f].options.find((o) => o.value === params.get(f))?.label
+  const active = fields.filter((f) => label(f))
   if (!active.length) return null
   return (
     <ul className="flex flex-wrap items-center gap-1.5" aria-label={t('filter.label')}>
@@ -158,7 +194,7 @@ export function ActiveFilters({ fields }: { fields: readonly FilterField[] }) {
             key={f}
             className="border-primary/30 bg-primary-light text-primary-hover inline-flex h-7 items-center gap-1 rounded-md border pr-0.5 pl-2 text-xs"
           >
-            {def.label}: <span className="font-semibold">{def.options.find((o) => o.value === filters[f])?.label}</span>
+            {def.label}: <span className="font-semibold">{label(f)}</span>
             <button
               type="button"
               aria-label={t('filter.remove', { col: def.label })}
@@ -181,12 +217,12 @@ export function ActiveFilters({ fields }: { fields: readonly FilterField[] }) {
   )
 }
 
-export function ResultCount({ n }: { n?: number }) {
+export function ResultCount({ n, kind = 'bug' }: { n?: number; kind?: FilterKind }) {
   const { t } = useI18n()
   if (n === undefined) return null
   return (
     <p className="text-muted-foreground ml-auto text-sm tabular-nums" aria-live="polite">
-      {t('filter.results', { n })}
+      {t(kind === 'bug' ? 'filter.results' : 'filter.featureResults', { n })}
     </p>
   )
 }

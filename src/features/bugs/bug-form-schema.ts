@@ -4,7 +4,7 @@ import { PLATFORMS, SEVERITIES, type BugInput } from '@/types'
 
 export const UNASSIGNED = '__none'
 
-const text = (max: number, required = true) =>
+export const text = (max: number, required = true) =>
   required
     ? z.string().trim().min(1, 'v.required').max(max, `v.tooLong|${max}`)
     : z.string().max(max, `v.tooLong|${max}`)
@@ -12,7 +12,7 @@ const text = (max: number, required = true) =>
 export const schema = z.object({
   projectId: z.string().min(1, 'v.required'),
   title: text(200),
-  platform: z.enum(PLATFORMS, { error: 'v.required' }),
+  platform: z.array(z.enum(PLATFORMS)).min(1, 'v.required'),
   isCore: z.enum(['yes', 'no'], { error: 'v.required' }),
   severity: z.enum(SEVERITIES, { error: 'v.required' }),
   steps: z

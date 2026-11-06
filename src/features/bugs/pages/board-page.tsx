@@ -1,6 +1,7 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import { ErrorState } from '@/components/common/states'
 import { useI18n } from '@/i18n'
+import { useBugs } from '@/services/queries'
 import { ActiveFilters, ColumnFilter, ResultCount, SearchBox } from '../components/bug-filters'
 import { KanbanBoard } from '../components/kanban-board'
 import { useBugFilters, type FilterField } from '../hooks/use-bug-filters'
@@ -12,9 +13,12 @@ const BOARD_FIELDS: FilterField[] = ['platform', 'core']
 
 export function BoardPage() {
   const { t } = useI18n()
-  const { bugs, isPending, isError, refetch } = useScope()
-  const { apply } = useBugFilters()
-  const visible = apply(bugs, BOARD_IGNORED)
+  const { project, isPending: scopePending } = useScope()
+  const { useQuery } = useBugFilters()
+  const bugsQuery = useBugs(useQuery(project?.key, BOARD_IGNORED), !scopePending)
+  const { isError, refetch } = bugsQuery
+  const isPending = scopePending || bugsQuery.isPending
+  const visible = bugsQuery.data ?? []
 
   if (isError) return <ErrorState onRetry={refetch} />
 

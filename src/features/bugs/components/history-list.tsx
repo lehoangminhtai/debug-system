@@ -1,21 +1,32 @@
 import { formatTs } from '@/lib/utils'
 import { UserAvatar } from '@/components/common/user-avatar'
-import { useI18n } from '@/i18n'
+import { useI18n, type TKey } from '@/i18n'
 import { cn } from '@/lib/utils'
-import type { BugHistory, Status } from '@/types'
+import type { BugHistory, FeatureHistory } from '@/types'
 
 /** Lịch sử: ai · làm gì · lúc nào (mới nhất ở trên) */
-export function HistoryList({ history, className }: { history: BugHistory[]; className?: string }) {
+export function HistoryList({
+  history,
+  kind = 'bug',
+  className,
+}: {
+  history: (BugHistory | FeatureHistory)[]
+  /** feature: dùng nhãn trạng thái / câu lịch sử của đề xuất tính năng */
+  kind?: 'bug' | 'feature'
+  className?: string
+}) {
   const { t } = useI18n()
+  const [hk, sk] = kind === 'bug' ? (['history', 'status'] as const) : (['featureHistory', 'featureStatus'] as const)
+  const status = (s?: string) => t(`${sk}.${s}` as TKey)
 
-  const describe = (h: BugHistory) => {
+  const describe = (h: BugHistory | FeatureHistory) => {
     switch (h.action) {
       case 'status':
-        return t('history.status', { from: t(`status.${h.target as Status}`), to: t(`status.${h.status}`) })
+        return t(`${hk}.status`, { from: status(h.target), to: status(h.status) })
       case 'assign':
-        return t('history.assign', { target: h.target ?? '' })
+        return t(`${hk}.assign`, { target: h.target ?? '' })
       default:
-        return t(`history.${h.action}`)
+        return t(`${hk}.${h.action}`)
     }
   }
 

@@ -1,11 +1,25 @@
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { PLATFORMS, SEVERITIES, STATUSES, type Bug, type Platform, type Severity, type Status } from '@/types'
+import type { BugQuery } from '@/services/api'
+import { PLATFORMS, SEVERITIES, STATUSES, type Platform, type Severity, type Status } from '@/types'
 
 export const PAGE_SIZE = 10
 
+function useDebounced<T>(value: T, ms = 300) {
+  const [v, setV] = useState(value)
+  useEffect(() => {
+    const id = setTimeout(() => setV(value), ms)
+    return () => clearTimeout(id)
+  }, [value, ms])
+  return v
+}
+
 export const FILTER_FIELDS = ['platform', 'core', 'severity', 'status'] as const
 export type FilterField = (typeof FILTER_FIELDS)[number]
-type FilterKey = 'q' | FilterField
+/** Bộ lọc của trang Tính năng mong muốn (cùng tham số URL, giá trị trạng thái khác) */
+export const FEATURE_FILTER_FIELDS = ['platform', 'priority', 'status'] as const
+export type FeatureFilterField = (typeof FEATURE_FILTER_FIELDS)[number]
+type FilterKey = 'q' | FilterField | FeatureFilterField
 
 const pick = <T extends string>(v: string | null, allowed: readonly T[]) =>
   v && (allowed as readonly string[]).includes(v) ? (v as T) : undefined
@@ -34,24 +48,30 @@ export function useBugFilters() {
   const setFilter = (key: FilterKey, value: string | undefined) =>
     update((next) => (value ? next.set(key, value) : next.delete(key)))
 
-  const clear = () => update((next) => (['q', ...FILTER_FIELDS] as const).forEach((k) => next.delete(k)))
+  const clear = () => update((next) => ['q', ...FILTER_FIELDS, 'priority'].forEach((k) => next.delete(k)))
 
   /** ignore: các field không áp dụng ở màn hình hiện tại (Kanban đã chia cột theo trạng thái) */
-  const apply = (bugs: Bug[], ignore: FilterField[] = []) => {
-    const q = filters.q.trim().toLowerCase()
-    const on = (f: FilterField) => !ignore.includes(f) && filters[f]
-    return bugs.filter(
-      (b) =>
-        (!q || b.code.toLowerCase().includes(q) || b.title.toLowerCase().includes(q)) &&
-        (!on('platform') || b.platform === filters.platform) &&
-        (!on('core') || b.isCore === (filters.core === 'yes')) &&
-        (!on('severity') || b.severity === filters.severity) &&
-        (!on('status') || b.status === filters.status),
-    )
-  }
-
   const isActive = (ignore: FilterField[] = []) =>
     !!filters.q || FILTER_FIELDS.some((f) => !ignore.includes(f) && filters[f])
 
-  return { filters, setFilter, clear, apply, isActive }
+  /** Tham số gửi lên Bug@index — lọc/tìm kiếm do server làm; `q` được debounce để không gọi API mỗi phím gõ */
+  const useQuery = (
+    project: string | undefined,
+    ignore: FilterField[] = [],
+    sort?: Pick<BugQuery, 'sortBy' | 'sortDir'>,
+  ) => {
+    const q = useDebounced(filters.q)
+    const on = (f: FilterField) => (ignore.includes(f) ? undefined : filters[f])
+    return {
+      project,
+      q,
+      platform: on('platform') as Platform | undefined,
+      core: on('core') as 'yes' | 'no' | undefined,
+      severity: on('severity') as Severity | undefined,
+      status: on('status') as Status | undefined,
+      ...sort,
+    } satisfies BugQuery
+  }
+
+  return { filters, setFilter, clear, isActive, useQuery }
 }

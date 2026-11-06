@@ -21,11 +21,11 @@ import {
   Tags,
   Target,
   X,
-  type LucideIcon,
 } from 'lucide-react'
-import { useEffect } from 'react'
-import { Controller, useFieldArray, useForm, useWatch, type UseFormRegisterReturn } from 'react-hook-form'
+import { useEffect, useState } from 'react'
+import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form'
 import { Field, FieldSet } from '@/components/common/field'
+import { RadioCard } from '@/components/common/radio-card'
 import { Hint } from '@/components/common/hint'
 import { Section } from '@/components/common/section'
 import { Button } from '@/components/ui/button'
@@ -34,75 +34,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { useUnsavedChangesGuard } from '@/hooks/use-unsaved-changes'
 import { useI18n } from '@/i18n'
-import { PLATFORM_ICON, PLATFORM_TONE, SEVERITY_META, TONES, type Tone } from '@/lib/meta'
+import { PLATFORM_ICON, PLATFORM_TONE, SEVERITY_META } from '@/lib/meta'
 import { cn } from '@/lib/utils'
+import { OtpDialog } from '@/components/common/otp-dialog'
 import { PersonSelect } from '@/components/common/person-select'
 import { useMe, usePeople } from '@/services/queries'
 import { PLATFORMS, SEVERITIES, type Bug, type Project } from '@/types'
 import { UNASSIGNED, schema, type BugFormValues } from '../bug-form-schema'
 import { ImageField } from './image-field'
 
-/** Màu viền + nền khi được chọn, theo tông của lựa chọn */
-const CHECKED: Record<Tone, string> = {
-  primary: 'has-[:checked]:border-primary has-[:checked]:bg-primary-light/50',
-  info: 'has-[:checked]:border-info has-[:checked]:bg-info-bg',
-  warning: 'has-[:checked]:border-warning has-[:checked]:bg-warning-bg',
-  success: 'has-[:checked]:border-success has-[:checked]:bg-success-bg',
-  destructive: 'has-[:checked]:border-destructive has-[:checked]:bg-destructive-bg',
-  neutral: 'has-[:checked]:border-foreground/40 has-[:checked]:bg-muted',
-}
-
-/** Thẻ radio dùng <input type="radio"> gốc: phím mũi tên, focus khi lỗi và RHF register hoạt động sẵn */
-function RadioCard({
-  registration,
-  value,
-  title,
-  hint,
-  icon: Icon,
-  tone = 'primary',
-  describedBy,
-}: {
-  registration: UseFormRegisterReturn
-  value: string
-  title: string
-  hint?: string
-  icon?: LucideIcon
-  tone?: Tone
-  describedBy?: string
-}) {
-  return (
-    <label
-      className={cn(
-        'bg-card flex min-h-11 cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 transition-colors duration-150',
-        'hover:bg-accent',
-        CHECKED[tone],
-        'has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-2',
-      )}
-    >
-      <input type="radio" value={value} {...registration} aria-describedby={describedBy} className="peer sr-only" />
-      <span
-        aria-hidden
-        className="bg-card border-input peer-checked:border-primary mt-1.5 flex size-4 shrink-0 items-center justify-center rounded-full border peer-checked:border-[5px]"
-      />
-      {Icon && (
-        <span aria-hidden className={cn('flex size-7 shrink-0 items-center justify-center rounded-md', TONES[tone])}>
-          <Icon className="size-4" />
-        </span>
-      )}
-      <span className="min-w-0">
-        <span className="block text-sm font-medium">{title}</span>
-        {hint && <span className="text-muted-foreground block text-xs">{hint}</span>}
-      </span>
-    </label>
-  )
-}
-
 interface Props {
   projects: Project[]
   bug?: Bug
   defaultProjectKey?: string | null
   /** Trả về promise: form ở trạng thái đang gửi (nút khóa, không chặn điều hướng) đến khi promise kết thúc */
-  onSubmit: (values: BugFormValues) => Promise<unknown>
+  onSubmit: (values: BugFormValues, otp: string) => Promise<unknown>
   onCancel: () => void
 }
 
@@ -134,6 +80,7 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
       : {
           projectId: String(projects.find((p) => p.key === defaultProjectKey)?.id ?? ''),
           title: '',
+          platform: [],
           steps: [{ value: '' }, { value: '' }],
           expected: '',
           actual: '',
@@ -149,7 +96,18 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
   useEffect(() => {
     if (!isEdit && currentUser && !getValues('reporter')) setValue('reporter', currentUser)
   }, [isEdit, currentUser, getValues, setValue])
-  const submitting = formState.isSubmitting
+  // Form hợp lệ → hỏi OTP rồi mới gửi (doc API §12). `sending` giữ trạng thái đang gửi tới khi điều hướng xong.
+  const [pending, setPending] = useState<BugFormValues | null>(null)
+  const [sending, setSending] = useState(false)
+  const submitting = sending
+  const sendWithOtp = async (otp: string) => {
+    setSending(true)
+    try {
+      await onSubmit(pending!, otp)
+    } finally {
+      setSending(false)
+    }
+  }
   // Có thay đổi chưa lưu → hỏi trước khi rời trang; khi đang gửi thì cho phép điều hướng sau khi lưu xong
   const leaveDialog = useUnsavedChangesGuard(formState.isDirty && !submitting)
   const { errors } = formState
@@ -169,8 +127,9 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
   const stepsError = errors.steps?.message ?? errors.steps?.root?.message
 
   return (
-    <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="flex flex-col gap-5">
+    <form onSubmit={form.handleSubmit((values) => setPending(values))} noValidate className="flex flex-col gap-5">
       {leaveDialog}
+      <OtpDialog open={!!pending} onOpenChange={(o) => !o && setPending(null)} onSubmit={sendWithOtp} />
       {/* Thông tin chung */}
       <Section id="general" icon={FileText} title={t('form.general')}>
         <div className="flex flex-col gap-4">
@@ -236,6 +195,7 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
                   return (
                     <RadioCard
                       key={p}
+                      type="checkbox"
                       registration={register('platform')}
                       value={p}
                       title={t(`platform.${p}`)}

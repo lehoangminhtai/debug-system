@@ -2,21 +2,20 @@ import {
   flexRender,
   getCoreRowModel,
   getPaginationRowModel,
-  getSortedRowModel,
   useReactTable,
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table'
 import { ArrowDown, ArrowUp, ArrowUpDown, Check, ShieldAlert } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { PlatformBadge, SeverityBadge, StatusBadge } from '@/components/common/badges'
+import { TruncateTip } from '@/components/common/truncate-tip'
 import { UserName } from '@/components/common/user-avatar'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useI18n } from '@/i18n'
-import { isBlocking, severityRank, statusRank } from '@/lib/rules'
 import { cn, formatTs } from '@/lib/utils'
-import type { Bug, Project } from '@/types'
+import type { Bug } from '@/types'
 import { PAGE_SIZE } from '../hooks/use-bug-filters'
 import { FROM_LIST } from '../hooks/use-scope'
 import type { FilterField } from '../hooks/use-bug-filters'
@@ -31,29 +30,27 @@ const cellVisibility = (id: string) => (WIDE_ONLY.has(id) ? 'hidden xl:table-cel
 
 interface Props {
   bugs: Bug[]
-  projects: Project[]
   /** Trang hiện tại (0-based) — điều khiển từ thanh công cụ phía trên bảng */
   pageIndex: number
+  /** Sắp xếp do server làm — bảng chỉ hiển thị và báo thay đổi */
+  sorting: SortingState
+  onSortingChange: (s: SortingState) => void
 }
 
-export function BugTable({ bugs, projects, pageIndex }: Props) {
+export function BugTable({ bugs, pageIndex, sorting, onSortingChange }: Props) {
   const { t } = useI18n()
   const navigate = useNavigate()
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'createdAt', desc: true }])
 
   const columns = useMemo<ColumnDef<Bug>[]>(() => {
-    const projectKey = (b: Bug) => projects.find((p) => p.id === b.projectId)?.key ?? ''
     return [
       {
         id: 'code',
         header: t('field.code'),
         accessorFn: (b) => b.code,
-        sortingFn: (a, b) =>
-          projectKey(a.original).localeCompare(projectKey(b.original)) || a.original.seq - b.original.seq,
         cell: ({ row }) => (
           <span className="inline-flex items-center gap-1.5">
             <span className="font-mono text-xs font-medium">{row.original.code}</span>
-            {isBlocking(row.original) && (
+            {row.original.mustFix && row.original.status !== 'closed' && (
               <ShieldAlert
                 className="text-destructive-text size-3.5"
                 role="img"
@@ -72,14 +69,15 @@ export function BugTable({ bugs, projects, pageIndex }: Props) {
         accessorKey: 'title',
         enableSorting: false,
         cell: ({ row }) => (
-          <Link
-            to={`/bugs/${row.original.code}`}
-            state={FROM_LIST}
-            title={row.original.title}
-            className="focus-visible:ring-ring block truncate font-medium hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:outline-none"
-          >
-            {row.original.title}
-          </Link>
+          <TruncateTip label={row.original.title}>
+            <Link
+              to={`/bugs/${row.original.code}`}
+              state={FROM_LIST}
+              className="focus-visible:ring-ring text-primary hover:text-primary-hover block truncate font-medium underline underline-offset-2 focus-visible:rounded-sm focus-visible:ring-2 focus-visible:outline-none"
+            >
+              {row.original.title}
+            </Link>
+          </TruncateTip>
         ),
       },
       {
@@ -87,7 +85,12 @@ export function BugTable({ bugs, projects, pageIndex }: Props) {
         header: t('field.platform'),
         accessorKey: 'platform',
         enableSorting: false,
-        cell: ({ row }) => <PlatformBadge platform={row.original.platform} />,
+        cell: ({ row }) => (
+          // nhiều nền tảng → xuống dòng trong ô, không tràn sang cột bên cạnh
+          <span className="flex flex-wrap gap-1 whitespace-normal">
+            <PlatformBadge platform={row.original.platform} />
+          </span>
+        ),
       },
       {
         id: 'core',
@@ -104,14 +107,14 @@ export function BugTable({ bugs, projects, pageIndex }: Props) {
       {
         id: 'severity',
         header: t('field.severity'),
-        accessorFn: (b) => severityRank(b.severity),
+        accessorFn: (b) => b.severity,
         sortDescFirst: false, // bấm lần đầu: Nghiêm trọng lên trước
         cell: ({ row }) => <SeverityBadge severity={row.original.severity} />,
       },
       {
         id: 'status',
         header: t('field.status'),
-        accessorFn: (b) => statusRank(b.status),
+        accessorFn: (b) => b.status,
         sortDescFirst: false,
         cell: ({ row }) => <StatusBadge status={row.original.status} />,
       },
@@ -119,7 +122,12 @@ export function BugTable({ bugs, projects, pageIndex }: Props) {
         id: 'assignee',
         header: t('field.assignee'),
         accessorFn: (b) => b.assignee ?? '',
-        cell: ({ row }) => <UserName name={row.original.assignee} fallback={t('table.unassigned')} />,
+        enableSorting: false, // API không sắp xếp theo người sửa
+        cell: ({ row }) => (
+          <TruncateTip label={row.original.assignee ?? ''}>
+            <UserName name={row.original.assignee} fallback={t('table.unassigned')} />
+          </TruncateTip>
+        ),
       },
       {
         id: 'createdAt',
@@ -127,13 +135,15 @@ export function BugTable({ bugs, projects, pageIndex }: Props) {
         accessorKey: 'createdAt',
         sortDescFirst: true, // mới nhất trước
         cell: ({ row }) => (
-          <time dateTime={row.original.createdAt} className="text-muted-foreground whitespace-nowrap">
-            {formatTs(row.original.createdAt)}
-          </time>
+          <TruncateTip label={formatTs(row.original.createdAt)}>
+            <time dateTime={row.original.createdAt} className="text-muted-foreground block truncate">
+              {formatTs(row.original.createdAt)}
+            </time>
+          </TruncateTip>
         ),
       },
     ]
-  }, [t, projects])
+  }, [t])
 
   // Dự án không bật React Compiler; cảnh báo này chỉ áp dụng khi dùng compiler.
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -141,9 +151,9 @@ export function BugTable({ bugs, projects, pageIndex }: Props) {
     data: bugs,
     columns,
     state: { sorting, pagination: { pageIndex, pageSize: PAGE_SIZE } },
-    onSortingChange: setSorting,
+    manualSorting: true,
+    onSortingChange: (u) => onSortingChange(typeof u === 'function' ? u(sorting) : u),
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
   })
 
@@ -160,7 +170,7 @@ export function BugTable({ bugs, projects, pageIndex }: Props) {
             >
               <span className="flex items-center gap-1.5">
                 <span className="font-mono text-xs font-medium">{bug.code}</span>
-                {isBlocking(bug) && (
+                {bug.mustFix && bug.status !== 'closed' && (
                   <ShieldAlert
                     className="text-destructive-text size-3.5"
                     role="img"
@@ -184,17 +194,17 @@ export function BugTable({ bugs, projects, pageIndex }: Props) {
       </ul>
 
       <div className="bg-card hidden flex-1 overflow-x-auto rounded-lg border md:block">
-        <Table className="table-fixed xl:min-w-[920px]">
+        <Table className="table-fixed xl:min-w-[940px]">
           <caption className="sr-only">{t('table.caption')}</caption>
           <colgroup>
-            <col className="w-[104px]" />
-            <col />
-            <col className="hidden w-[124px] xl:table-column" />
             <col className="w-[92px]" />
+            <col />
+            <col className="hidden w-[112px] xl:table-column" />
+            <col className="w-[72px]" />
+            <col className="w-[120px]" />
             <col className="w-[132px]" />
-            <col className="w-[124px]" />
-            <col className="w-[112px]" />
-            <col className="hidden w-[120px] xl:table-column" />
+            <col className="w-[150px]" />
+            <col className="hidden w-[156px] xl:table-column" />
           </colgroup>
           <TableHeader className="bg-muted">
             {table.getHeaderGroups().map((hg) => (
@@ -206,7 +216,10 @@ export function BugTable({ bugs, projects, pageIndex }: Props) {
                     <TableHead
                       key={header.id}
                       aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : undefined}
-                      className={cn('text-muted-foreground h-9 text-xs font-medium', cellVisibility(header.column.id))}
+                      className={cn(
+                        'text-muted-foreground h-9 px-1.5 text-xs font-medium',
+                        cellVisibility(header.column.id),
+                      )}
                     >
                       <div className="flex items-center gap-0.5">
                         {header.column.getCanSort() ? (
@@ -243,7 +256,7 @@ export function BugTable({ bugs, projects, pageIndex }: Props) {
                 }}
               >
                 {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id} className={cn('py-2 text-sm', cellVisibility(cell.column.id))}>
+                  <TableCell key={cell.id} className={cn('px-1.5 py-2 text-sm', cellVisibility(cell.column.id))}>
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </TableCell>
                 ))}

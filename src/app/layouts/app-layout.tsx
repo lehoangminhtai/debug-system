@@ -3,6 +3,17 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate, Outlet, ScrollRestoration, useLocation, useNavigation } from 'react-router-dom'
 import { Hint } from '@/components/common/hint'
 import { UserAvatar } from '@/components/common/user-avatar'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
@@ -131,17 +142,32 @@ function HeaderControls() {
           <span className="text-foreground text-sm font-semibold">{user}</span>
         </p>
         <div aria-hidden className="bg-border mx-0.5 h-6 w-px" />
-        <Hint label={t('auth.logout')}>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground"
-            aria-label={t('auth.logout')}
-            onClick={logout}
-          >
-            <LogOut />
-          </Button>
-        </Hint>
+        <AlertDialog>
+          <Hint label={t('auth.logout')}>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground hover:bg-destructive-bg hover:text-destructive-text"
+                aria-label={t('auth.logout')}
+              >
+                <LogOut />
+              </Button>
+            </AlertDialogTrigger>
+          </Hint>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('auth.logoutTitle')}</AlertDialogTitle>
+              <AlertDialogDescription>{t('auth.logoutDesc')}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel autoFocus>{t('action.cancel')}</AlertDialogCancel>
+              <AlertDialogAction variant="destructive" onClick={logout}>
+                {t('auth.logout')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   )

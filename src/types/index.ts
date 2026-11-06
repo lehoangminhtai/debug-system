@@ -1,4 +1,4 @@
-export const PLATFORMS = ['backend', 'frontend', 'mobile', 'window'] as const
+export const PLATFORMS = ['backend', 'frontend', 'mobile', 'windows'] as const
 export const SEVERITIES = ['critical', 'high', 'medium', 'low'] as const
 export const STATUSES = ['new', 'fixing', 'fixed', 'closed'] as const
 
@@ -16,6 +16,10 @@ export interface Project {
   nextSeq: number
   /** Số bug bắt buộc sửa chưa đóng (backend tính) */
   mustFixOpen: number
+  /** Số thứ tự đề xuất tính năng kế tiếp (FF-F004) */
+  nextFeatureSeq: number
+  /** Số đề xuất tính năng đang `new` — hiện trên sidebar. Backend cũ chưa trả → FE tự đếm (ProjectNav) */
+  newFeatureCount?: number
 }
 
 export interface BugImage {
@@ -44,7 +48,7 @@ export interface Bug {
   seq: number
   code: string
   title: string
-  platform: Platform
+  platform: Platform[]
   isCore: boolean
   severity: Severity
   /** isCore || severity === 'critical' (backend tính) */
@@ -65,7 +69,7 @@ export interface Bug {
 export interface BugInput {
   projectId: number
   title: string
-  platform: Platform
+  platform: Platform[]
   isCore: boolean
   severity: Severity
   steps: string
@@ -81,4 +85,68 @@ export interface ProjectInput {
   key: string
   name: string
   description: string
+}
+
+// ── Tính năng mong muốn (doc/feature-request-spec.md) ──
+export const PRIORITIES = ['high', 'medium', 'low'] as const
+export const FEATURE_STATUSES = ['new', 'accepted', 'in_progress', 'done', 'rejected'] as const
+
+export type Priority = (typeof PRIORITIES)[number]
+export type FeatureStatus = (typeof FEATURE_STATUSES)[number]
+
+export interface FeatureMedia {
+  id: number
+  type: 'image' | 'video'
+  url: string
+  caption: string
+  size: number
+}
+
+export interface FeatureHistory {
+  id: number
+  status: FeatureStatus
+  who: string
+  action: HistoryAction
+  /** assign: người được giao · status: trạng thái trước đó */
+  target?: string
+  createdAt: string
+}
+
+export interface Feature {
+  id: number
+  projectId: number
+  seq: number
+  code: string
+  title: string
+  /** Một hoặc nhiều nền tảng (API: `platforms`) */
+  platform: Platform[]
+  current: string
+  desired: string
+  benefit: string
+  priority: Priority
+  status: FeatureStatus
+  rejectReason: string | null
+  requester: string
+  assignee: string | null
+  createdAt: string
+  media: FeatureMedia[]
+  history: FeatureHistory[]
+}
+
+/** File minh hoạ khi lưu: giữ file cũ theo `id`, hoặc file mới */
+export type MediaInput = { id: number; caption: string } | { file: Blob; name: string; caption: string }
+
+export interface FeatureInput {
+  projectId?: number
+  title: string
+  /** Một hoặc nhiều nền tảng (API: `platforms`) */
+  platform: Platform[]
+  current: string
+  desired: string
+  benefit: string
+  priority: Priority
+  requester: string
+  assignee: string | null
+  /** Danh sách đầy đủ sau khi sửa ([] = xoá hết) */
+  media: MediaInput[]
 }

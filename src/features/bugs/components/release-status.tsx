@@ -3,9 +3,10 @@ import { Link } from 'react-router-dom'
 import { Hint } from '@/components/common/hint'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useI18n } from '@/i18n'
-import { releaseStatus } from '@/lib/rules'
 import { cn } from '@/lib/utils'
-import type { Bug, Project } from '@/types'
+import { useReleaseStatuses } from '@/services/queries'
+import type { ReleaseStatus as Release } from '@/services/api'
+import type { Project } from '@/types'
 import { FROM_LIST } from '../hooks/use-scope'
 
 const chipClass =
@@ -40,9 +41,8 @@ function Line({ ready, title, children }: { ready: boolean; title: string; child
   )
 }
 
-function ProjectRelease({ bugs }: { bugs: Bug[] }) {
+function ProjectRelease({ ready, blocking }: Pick<Release, 'ready' | 'blocking'>) {
   const { t } = useI18n()
-  const { ready, blocking } = releaseStatus(bugs)
   return (
     <Line ready={ready} title={t(ready ? 'release.ready' : 'release.blocked')}>
       <span className="text-muted-foreground">
@@ -51,7 +51,7 @@ function ProjectRelease({ bugs }: { bugs: Bug[] }) {
       {!ready && (
         <ul className="flex flex-wrap gap-1.5">
           {blocking.map((b) => (
-            <li key={b.id}>
+            <li key={b.code}>
               <Link
                 to={`/bugs/${b.code}`}
                 state={FROM_LIST}
@@ -68,9 +68,9 @@ function ProjectRelease({ bugs }: { bugs: Bug[] }) {
   )
 }
 
-function AllRelease({ bugs, projects }: { bugs: Bug[]; projects: Project[] }) {
+function AllRelease({ projects, statuses }: { projects: Project[]; statuses: Release[] }) {
   const { t } = useI18n()
-  const rows = projects.map((p) => ({ project: p, ...releaseStatus(bugs.filter((b) => b.projectId === p.id)) }))
+  const rows = projects.map((p, i) => ({ project: p, ready: statuses[i].ready, blocking: statuses[i].blocking }))
   const blockedCount = rows.filter((r) => !r.ready).length
   const ready = blockedCount === 0
   const title = ready
@@ -108,11 +108,19 @@ function AllRelease({ bugs, projects }: { bugs: Bug[]; projects: Project[] }) {
 interface Props {
   project: Project | null
   projects: Project[]
-  bugs: Bug[]
-  isPending: boolean
 }
 
-export function ReleaseStatus({ project, projects, bugs, isPending }: Props) {
-  if (isPending) return <Skeleton className="h-6 w-72" />
-  return project ? <ProjectRelease bugs={bugs} /> : <AllRelease bugs={bugs} projects={projects} />
+/** Trạng thái release do server tính (Project@releaseStatus) */
+export function ReleaseStatus({ project, projects }: Props) {
+  const keys = project ? [project.key] : projects.map((p) => p.key)
+  const results = useReleaseStatuses(keys)
+  if (results.some((r) => r.isPending)) return <Skeleton className="h-6 w-72" />
+  // Không có dữ liệu thì không được kết luận "Sẵn sàng release"
+  const statuses = results.map((r) => r.data)
+  if (statuses.some((s) => !s)) return null
+  return project ? (
+    <ProjectRelease {...statuses[0]!} />
+  ) : (
+    <AllRelease projects={projects} statuses={statuses as Release[]} />
+  )
 }
