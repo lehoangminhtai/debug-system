@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useI18n } from '@/i18n'
 import { STATUS_META, TONE_TEXT } from '@/lib/meta'
-import { isMustFix, severityRank } from '@/lib/rules'
+import { severityRank } from '@/lib/rules'
 import { cn } from '@/lib/utils'
 import { useChangeStatus } from '@/services/queries'
 import { STATUSES, type Bug, type Status } from '@/types'
@@ -98,7 +98,7 @@ function KanbanCard({
             {t('field.core')}
           </span>
         )}
-        {isMustFix(bug) && bug.status !== 'closed' && <MustFixBadge />}
+        {bug.mustFix && bug.status !== 'closed' && <MustFixBadge />}
         <span className="text-muted-foreground ml-auto inline-flex items-center gap-1.5 text-xs">
           {bug.assignee ? (
             <>

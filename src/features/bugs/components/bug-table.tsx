@@ -15,7 +15,7 @@ import { UserName } from '@/components/common/user-avatar'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useI18n } from '@/i18n'
 import { isBlocking, severityRank, statusRank } from '@/lib/rules'
-import { cn } from '@/lib/utils'
+import { cn, formatTs } from '@/lib/utils'
 import type { Bug, Project } from '@/types'
 import { PAGE_SIZE } from '../hooks/use-bug-filters'
 import { FROM_LIST } from '../hooks/use-scope'
@@ -37,7 +37,7 @@ interface Props {
 }
 
 export function BugTable({ bugs, projects, pageIndex }: Props) {
-  const { t, formatDate } = useI18n()
+  const { t } = useI18n()
   const navigate = useNavigate()
   const [sorting, setSorting] = useState<SortingState>([{ id: 'createdAt', desc: true }])
 
@@ -128,12 +128,12 @@ export function BugTable({ bugs, projects, pageIndex }: Props) {
         sortDescFirst: true, // mới nhất trước
         cell: ({ row }) => (
           <time dateTime={row.original.createdAt} className="text-muted-foreground whitespace-nowrap">
-            {formatDate(row.original.createdAt)}
+            {formatTs(row.original.createdAt)}
           </time>
         ),
       },
     ]
-  }, [t, formatDate, projects])
+  }, [t, projects])
 
   // Dự án không bật React Compiler; cảnh báo này chỉ áp dụng khi dùng compiler.
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -167,7 +167,7 @@ export function BugTable({ bugs, projects, pageIndex }: Props) {
                     aria-label={t('handling.mustFix')}
                   />
                 )}
-                <span className="text-muted-foreground ml-auto text-xs">{formatDate(bug.createdAt)}</span>
+                <span className="text-muted-foreground ml-auto text-xs">{formatTs(bug.createdAt)}</span>
               </span>
               <span className="line-clamp-2 text-sm font-medium break-words">{bug.title}</span>
               <span className="flex flex-wrap items-center gap-1.5">

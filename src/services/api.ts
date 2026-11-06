@@ -1,155 +1,127 @@
-// Mock API — lưu trong localStorage của trình duyệt, KHÔNG lên server.
-// Thay thân các hàm bằng fetch() tới backend thật; chữ ký hàm giữ nguyên để UI không phải sửa.
-import type { Bug, BugHistory, BugInput, HistoryAction, Project, ProjectInput, Status } from '../types/index.ts'
-import { PROJECT_KEY_PATTERN, formatBugCode } from '../lib/rules.ts'
-import { createSeed } from './seed.ts'
+// Gọi backend thật (doc/debugging-system-api.md). Chữ ký hàm giữ nguyên như bản mock, chỉ bỏ tham số `who` (backend lấy từ token).
+import type { Bug, BugInput, Project, ProjectInput, Status } from '../types/index.ts'
+import { createPersistedStore } from '../lib/persisted-store.ts'
 
-export type ApiErrorCode = 'not_found' | 'duplicate_key' | 'invalid_key' | 'storage_full'
+// `npm run dev` → backend local; `npm run build` → máy chủ thật
+const API_BASE = import.meta.env.DEV ? 'http://localhost/dts/backend/' : 'http://192.168.110.2/web_develop/dts/backend/'
+// Ảnh luôn nằm trên máy chủ thật, kể cả khi dev chạy API ở localhost
+const ORIGIN = 'http://192.168.110.2'
 
+/** `code` lấy từ backend (not_found, duplicate_key, invalid_key, invalid_credentials...) hoặc nội bộ (network, session_expired, generic) */
 export class ApiError extends Error {
-  readonly code: ApiErrorCode
-  constructor(code: ApiErrorCode) {
+  readonly code: string
+  constructor(code: string) {
     super(code)
     this.code = code
   }
 }
 
-const STORAGE_KEY = 'debugs.db.v1'
-const LATENCY_MS = 250
+// Token đăng nhập. Hết hạn thì backend trả 401 → xóa token → router đưa về /login.
+const tokenStore = createPersistedStore<string>('debugs.token', '', (v): v is string => typeof v === 'string')
+export const useSession = tokenStore.use
+export const setToken = tokenStore.set
 
-type Db = ReturnType<typeof createSeed>
+type Options = { method?: 'GET' | 'POST'; query?: Record<string, string | undefined>; body?: unknown }
 
-function load(): Db {
-  const raw = localStorage.getItem(STORAGE_KEY)
-  if (raw) return JSON.parse(raw) as Db
-  const seed = createSeed()
-  save(seed)
-  return seed
-}
+async function request<T>(c: string, m: string, { method = 'GET', query = {}, body }: Options = {}): Promise<T> {
+  const params = new URLSearchParams({ c, m })
+  for (const [k, v] of Object.entries(query)) if (v) params.set(k, v)
 
-function save(db: Db) {
+  const headers: Record<string, string> = { Accept: 'application/json' }
+  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  const token = tokenStore.get()
+  if (token) headers.Authorization = `Bearer ${token}`
+
+  let res: Response
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
+    res = await fetch(`${API_BASE}?${params}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
   } catch {
-    throw new ApiError('storage_full')
+    throw new ApiError('network')
   }
+  const json = await res.json().catch(() => null)
+
+  // Đăng nhập đi qua login() riêng nên mọi 401 ở đây đều là mất phiên
+  if (res.status === 401 && c !== 'Auth') {
+    tokenStore.set('')
+    throw new ApiError('session_expired')
+  }
+  if (!res.ok || json?.success === false) throw new ApiError(json?.code ?? 'generic')
+  return json as T
 }
 
-/** Mô phỏng độ trễ mạng; mỗi lệnh đọc/ghi trọn vẹn trên một bản db để không lưu nửa chừng */
-async function run<T>(fn: (db: Db) => T, write = false): Promise<T> {
-  await new Promise((r) => setTimeout(r, LATENCY_MS))
-  const db = load()
-  const result = fn(db)
-  if (write) save(db)
-  return structuredClone(result)
+export async function login(username: string, password: string, otp?: string) {
+  const json = await request<{ accessToken: string }>('Auth', 'login', {
+    method: 'POST',
+    body: { username, password, otp: otp || null },
+  })
+  tokenStore.set(json.accessToken)
 }
 
-const now = () => new Date().toISOString()
+// Ảnh backend trả đường dẫn tương đối ('/web_develop/dts/upload/...'): thêm origin để <img> chạy được cả khi dev (trỏ về máy chủ thật).
+// Khi gửi lại (sửa bug) phải trả về đúng nguyên văn nên cắt origin đi.
+const imgIn = (url: string) => (url.startsWith('/') ? ORIGIN + url : url)
+const imgOut = (url: string) => (url.startsWith(ORIGIN + '/') ? url.slice(ORIGIN.length) : url)
 
-function findBug(db: Db, code: string) {
-  const bug = db.bugs.find((b) => b.code === code)
-  if (!bug) throw new ApiError('not_found')
-  return bug
+const bugIn = (b: Bug): Bug => ({
+  ...b,
+  images: b.images.map((i) => ({ ...i, url: imgIn(i.url) })),
+  history: b.history.map((h) => ({ ...h, target: h.target ?? undefined })),
+})
+
+const bugOut = <T extends { images: { url: string }[] }>(input: T): T => ({
+  ...input,
+  images: input.images.map((i) => ({ ...i, url: imgOut(i.url) })),
+})
+
+const data = async <T>(p: Promise<{ data: T }>) => (await p).data
+const post = (c: string, m: string, query: Options['query'], body: unknown) =>
+  request<{ data: Bug }>(c, m, { method: 'POST', query, body })
+
+export interface Me {
+  id: string
+  username: string
+  employee_id: string
+  name: string
+  role: string | null
 }
 
-function log(db: Db, bug: Bug, who: string, action: HistoryAction, target?: string) {
-  const entry: BugHistory = { id: ++db.ids.history, status: bug.status, who, action, target, createdAt: now() }
-  bug.history.push(entry)
+export interface Person {
+  uuid: string
+  username: string
+  employeeId: string | null
+  name: string
 }
 
 export const api = {
-  listProjects: () => run((db) => db.projects),
+  me: () => data<Me>(request('Auth', 'me')),
 
-  createProject: (input: ProjectInput) =>
-    run((db): Project => {
-      const key = input.key.trim().toUpperCase()
-      if (!PROJECT_KEY_PATTERN.test(key)) throw new ApiError('invalid_key')
-      if (db.projects.some((p) => p.key === key)) throw new ApiError('duplicate_key')
-      const project = {
-        id: ++db.ids.project,
-        key,
-        name: input.name.trim(),
-        description: input.description.trim(),
-        nextSeq: 1,
-      }
-      db.projects.push(project)
-      return project
-    }, true),
+  listUsers: () => data<Person[]>(request('User', 'index', { query: { limit: '200' } })),
 
-  listBugs: () => run((db) => db.bugs),
+  listProjects: () => data<Project[]>(request('Project', 'index')),
 
-  getBug: (code: string) => run((db) => findBug(db, code)),
+  createProject: (input: ProjectInput) => data<Project>(request('Project', 'store', { method: 'POST', body: input })),
 
-  createBug: (input: BugInput, who: string) =>
-    run((db): Bug => {
-      const project = db.projects.find((p) => p.id === input.projectId)
-      if (!project) throw new ApiError('not_found')
-      const seq = project.nextSeq++
-      const { images, ...fields } = input
-      const bug: Bug = {
-        ...fields,
-        id: ++db.ids.bug,
-        seq,
-        code: formatBugCode(project.key, seq),
-        status: 'new',
-        createdAt: now(),
-        images: images.map((img) => ({ ...img, id: ++db.ids.image })),
-        history: [],
-      }
-      log(db, bug, who, 'create')
-      if (bug.assignee) log(db, bug, who, 'assign', bug.assignee)
-      db.bugs.push(bug)
-      return bug
-    }, true),
+  listBugs: async () => (await data<Bug[]>(request('Bug', 'index'))).map(bugIn),
+
+  getBug: async (code: string) => bugIn(await data(request<{ data: Bug }>('Bug', 'show', { query: { code } }))),
+
+  createBug: async (input: BugInput) => bugIn((await post('Bug', 'store', undefined, bugOut(input))).data),
 
   /** Sửa nội dung bug. Dự án, trạng thái và lịch sử không đổi qua đây. */
-  updateBug: (code: string, input: Omit<BugInput, 'projectId'>, who: string) =>
-    run((db): Bug => {
-      const bug = findBug(db, code)
-      const { images, assignee, ...fields } = input
-      Object.assign(bug, fields)
-      // giữ id ảnh cũ, cấp id cho ảnh mới
-      bug.images = images.map((img) => {
-        const existing = bug.images.find((i) => i.url === img.url)
-        return { ...img, id: existing?.id ?? ++db.ids.image }
-      })
-      log(db, bug, who, 'edit')
-      if (assignee !== bug.assignee) {
-        bug.assignee = assignee
-        log(db, bug, who, assignee ? 'assign' : 'unassign', assignee ?? undefined)
-      }
-      return bug
-    }, true),
+  updateBug: async (code: string, input: Omit<BugInput, 'projectId'>) =>
+    bugIn((await post('Bug', 'update', { code }, bugOut(input))).data),
 
-  /** Đổi trạng thái. Chuyển sang "Đang sửa" khi chưa có người sửa → người thao tác tự nhận bug (BR-6). */
-  changeStatus: (code: string, status: Status, who: string) =>
-    run((db): Bug => {
-      const bug = findBug(db, code)
-      if (bug.status === status) return bug
-      const from = bug.status
-      bug.status = status
-      if (status === 'fixing' && !bug.assignee) {
-        bug.assignee = who
-        log(db, bug, who, 'claim')
-      } else {
-        log(db, bug, who, 'status', from)
-      }
-      return bug
-    }, true),
+  changeStatus: async (code: string, status: Status) =>
+    bugIn((await post('Bug', 'changeStatus', { code }, { status })).data),
 
-  assign: (code: string, assignee: string | null, who: string) =>
-    run((db): Bug => {
-      const bug = findBug(db, code)
-      if (bug.assignee === assignee) return bug
-      bug.assignee = assignee
-      log(db, bug, who, assignee ? 'assign' : 'unassign', assignee ?? undefined)
-      return bug
-    }, true),
+  assign: async (code: string, assignee: string | null) =>
+    bugIn((await post('Bug', 'assign', { code }, { assignee })).data),
 
-  /** Xóa bug. project.nextSeq không giảm → mã đã xóa không bao giờ được cấp lại. */
-  deleteBug: (code: string) =>
-    run((db) => {
-      findBug(db, code)
-      db.bugs = db.bugs.filter((b) => b.code !== code)
-    }, true),
+  deleteBug: async (code: string) => {
+    await request('Bug', 'destroy', { method: 'POST', query: { code }, body: {} })
+  },
 }

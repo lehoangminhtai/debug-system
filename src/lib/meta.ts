@@ -1,4 +1,5 @@
 import {
+  AppWindow,
   CheckCheck,
   ChevronDown,
   ChevronsUp,
@@ -58,4 +59,12 @@ export const PLATFORM_ICON: Record<Platform, LucideIcon> = {
   backend: Server,
   frontend: Monitor,
   mobile: Smartphone,
+  window: AppWindow,
+}
+
+export const PLATFORM_TONE: Record<Platform, Tone> = {
+  backend: 'info',
+  frontend: 'primary',
+  mobile: 'warning',
+  window: 'success',
 }

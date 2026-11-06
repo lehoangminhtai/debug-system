@@ -38,7 +38,14 @@ export function useUnsavedChangesGuard(when: boolean) {
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel autoFocus>{t('leave.stay')}</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" onClick={() => blocker.proceed?.()}>
+          <AlertDialogAction
+            variant="destructive"
+            onClick={(e) => {
+              // không để Radix đóng dialog: onOpenChange(false) sẽ gọi reset() và huỷ việc rời trang vừa xác nhận
+              e.preventDefault()
+              blocker.proceed?.()
+            }}
+          >
             {t('leave.confirm')}
           </AlertDialogAction>
         </AlertDialogFooter>

@@ -26,32 +26,16 @@ export const setLocale = localeStore.set
 type Params = Record<string, string | number>
 
 function makeI18n(locale: Locale) {
-  const { dict, intl } = LOCALES[locale]
-  const dateFmt = new Intl.DateTimeFormat(intl, { dateStyle: 'medium' })
-  const dateTimeFmt = new Intl.DateTimeFormat(intl, { dateStyle: 'medium', timeStyle: 'short' })
-  const rtf = new Intl.RelativeTimeFormat(intl, { numeric: 'auto' })
+  const { dict } = LOCALES[locale]
 
   const t = (key: TKey, params?: Params) => {
     const text = (params?.n === 1 && dict[`${key}_one`]) || dict[key]
     return params ? text.replace(/\{(\w+)\}/g, (m, k: string) => (k in params ? String(params[k]) : m)) : text
   }
 
-  const formatRelative = (iso: string) => {
-    const seconds = (Date.parse(iso) - Date.now()) / 1000
-    const abs = Math.abs(seconds)
-    if (abs < 60) return rtf.format(0, 'second')
-    if (abs < 3600) return rtf.format(Math.round(seconds / 60), 'minute')
-    if (abs < 86400) return rtf.format(Math.round(seconds / 3600), 'hour')
-    if (abs < 86400 * 30) return rtf.format(Math.round(seconds / 86400), 'day')
-    return dateFmt.format(new Date(iso))
-  }
-
   return {
     locale,
     t,
-    formatDate: (iso: string) => dateFmt.format(new Date(iso)),
-    formatDateTime: (iso: string) => dateTimeFmt.format(new Date(iso)),
-    formatRelative,
   }
 }
 

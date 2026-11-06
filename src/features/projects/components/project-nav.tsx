@@ -1,13 +1,12 @@
 import { Layers, Plus } from 'lucide-react'
-import { Suspense, lazy, useMemo, useState, type ReactNode } from 'react'
+import { Suspense, lazy, useState, type ReactNode } from 'react'
 import { NavLink, useLocation, useMatch, useSearchParams } from 'react-router-dom'
 import { Hint } from '@/components/common/hint'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useI18n } from '@/i18n'
-import { isBlocking } from '@/lib/rules'
 import { cn } from '@/lib/utils'
-import { useBugs, useProjects } from '@/services/queries'
+import { useProjects } from '@/services/queries'
 
 // Dialog (zod + react-hook-form) chỉ tải khi người dùng bấm "Dự án mới"
 const NewProjectDialog = lazy(() => import('./new-project-dialog').then((m) => ({ default: m.NewProjectDialog })))
@@ -45,16 +44,10 @@ function Label({ collapsed, children }: { collapsed: boolean; children: ReactNod
 export function ProjectNav({ onNavigate, collapsed = false }: { onNavigate?: () => void; collapsed?: boolean }) {
   const { t } = useI18n()
   const projects = useProjects()
-  const bugs = useBugs()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogMounted, setDialogMounted] = useState(false)
 
-  const blockingByProject = useMemo(() => {
-    const counts = new Map<number, number>()
-    for (const b of bugs.data ?? []) if (isBlocking(b)) counts.set(b.projectId, (counts.get(b.projectId) ?? 0) + 1)
-    return counts
-  }, [bugs.data])
-  const totalBlocking = [...blockingByProject.values()].reduce((a, b) => a + b, 0)
+  const totalBlocking = (projects.data ?? []).reduce((a, p) => a + p.mustFixOpen, 0)
   const countLabel = (n: number) => t('nav.mustFixCount', { n })
   const tip = (name: string, n: number) => (n ? `${name} · ${countLabel(n)}` : name)
 
@@ -108,7 +101,7 @@ export function ProjectNav({ onNavigate, collapsed = false }: { onNavigate?: () 
       ) : (
         <ul className="flex flex-col gap-0.5">
           {projects.data.map((p) => {
-            const n = blockingByProject.get(p.id) ?? 0
+            const n = p.mustFixOpen
             return (
               <li key={p.id}>
                 <Hint label={tip(p.name, n)} side="right" disabled={!collapsed}>

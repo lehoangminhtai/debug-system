@@ -1,4 +1,4 @@
-export const PLATFORMS = ['backend', 'frontend', 'mobile'] as const
+export const PLATFORMS = ['backend', 'frontend', 'mobile', 'window'] as const
 export const SEVERITIES = ['critical', 'high', 'medium', 'low'] as const
 export const STATUSES = ['new', 'fixing', 'fixed', 'closed'] as const
 
@@ -14,6 +14,8 @@ export interface Project {
   description: string
   /** Số thứ tự kế tiếp — chỉ tăng, không dùng lại khi xóa bug */
   nextSeq: number
+  /** Số bug bắt buộc sửa chưa đóng (backend tính) */
+  mustFixOpen: number
 }
 
 export interface BugImage {
@@ -45,6 +47,8 @@ export interface Bug {
   platform: Platform
   isCore: boolean
   severity: Severity
+  /** isCore || severity === 'critical' (backend tính) */
+  mustFix: boolean
   /** Mỗi dòng một bước */
   steps: string
   expected: string

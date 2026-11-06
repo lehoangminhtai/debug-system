@@ -1,5 +1,5 @@
-import { ImagePlus, Loader2, X } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { ImagePlus, Loader2, Plus, X } from 'lucide-react'
+import { useRef, useState, type DragEvent } from 'react'
 import { toast } from 'sonner'
 import { Hint } from '@/components/common/hint'
 import { Button } from '@/components/ui/button'
@@ -52,21 +52,24 @@ export function ImageField({ id, value, onChange, describedBy }: Props) {
   }
 
   const full = value.length >= MAX_IMAGES
+  const dropProps = {
+    onDragOver: (e: DragEvent) => {
+      e.preventDefault()
+      setDragOver(true)
+    },
+    onDragLeave: () => setDragOver(false),
+    onDrop: (e: DragEvent) => {
+      e.preventDefault()
+      setDragOver(false)
+      addFiles(e.dataTransfer.files)
+    },
+  }
 
   return (
     <div className="flex flex-col gap-3">
-      {!full && (
+      {value.length === 0 && (
         <div
-          onDragOver={(e) => {
-            e.preventDefault()
-            setDragOver(true)
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => {
-            e.preventDefault()
-            setDragOver(false)
-            addFiles(e.dataTransfer.files)
-          }}
+          {...dropProps}
           className={cn(
             'flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-6 text-center transition-colors duration-150',
             dragOver ? 'border-ring bg-primary-light/40' : 'bg-muted',
@@ -94,19 +97,20 @@ export function ImageField({ id, value, onChange, describedBy }: Props) {
               </p>
             </>
           )}
-          <input
-            ref={inputRef}
-            id={id}
-            aria-label={t('field.images')}
-            type="file"
-            accept={IMAGE_TYPES.join(',')}
-            multiple
-            className="sr-only"
-            tabIndex={-1}
-            onChange={(e) => addFiles(e.target.files)}
-          />
         </div>
       )}
+
+      <input
+        ref={inputRef}
+        id={id}
+        aria-label={t('field.images')}
+        type="file"
+        accept={IMAGE_TYPES.join(',')}
+        multiple
+        className="sr-only"
+        tabIndex={-1}
+        onChange={(e) => addFiles(e.target.files)}
+      />
 
       {value.length > 0 && (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -141,6 +145,31 @@ export function ImageField({ id, value, onChange, describedBy }: Props) {
               />
             </li>
           ))}
+          {!full && (
+            <li>
+              <button
+                type="button"
+                {...dropProps}
+                onClick={() => inputRef.current?.click()}
+                disabled={processing}
+                aria-label={t('action.chooseImages')}
+                aria-describedby={describedBy}
+                className={cn(
+                  'text-muted-foreground hover:border-primary hover:bg-primary-light/40 hover:text-primary focus-visible:ring-ring flex h-full min-h-40 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed transition-colors duration-150 outline-none focus-visible:ring-2 disabled:cursor-wait',
+                  dragOver ? 'border-ring bg-primary-light/40' : 'bg-muted',
+                )}
+              >
+                {processing ? (
+                  <Loader2 className="size-8 animate-spin" aria-hidden />
+                ) : (
+                  <Plus className="size-10" aria-hidden />
+                )}
+                <span className="text-sm font-medium">
+                  {processing ? t('form.processing') : t('action.chooseImages')}
+                </span>
+              </button>
+            </li>
+          )}
         </ul>
       )}
     </div>

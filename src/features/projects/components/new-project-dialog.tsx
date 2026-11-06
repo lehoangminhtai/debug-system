@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Loader2 } from 'lucide-react'
+import { FileText, FolderKanban, Hash, Loader2 } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -84,6 +84,7 @@ export function NewProjectDialog({ open, onOpenChange, onCreated, existingKeys }
           <Field
             id="project-key"
             label={t('field.key')}
+            icon={Hash}
             hint={t('project.keyHint')}
             error={errors.key?.message}
             required
@@ -102,13 +103,14 @@ export function NewProjectDialog({ open, onOpenChange, onCreated, existingKeys }
               />
             )}
           </Field>
-          <Field id="project-name" label={t('field.name')} error={errors.name?.message} required>
+          <Field id="project-name" label={t('field.name')} icon={FolderKanban} error={errors.name?.message} required>
             {(c) => <Input {...c} {...form.register('name')} placeholder={t('project.namePlaceholder')} />}
           </Field>
 
           <Field
             id="project-description"
             label={t('field.description')}
+            icon={FileText}
             hint={t('project.descHint')}
             error={errors.description?.message}
             required

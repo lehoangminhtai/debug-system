@@ -1,4 +1,4 @@
-import { Bug, HardDrive, Languages, LogOut, Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Bug, Languages, LogOut, Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate, Outlet, ScrollRestoration, useLocation, useNavigation } from 'react-router-dom'
 import { Hint } from '@/components/common/hint'
@@ -11,7 +11,7 @@ import { LOCALES, setLocale, useI18n, type Locale } from '@/i18n'
 import { createPersistedStore } from '@/lib/persisted-store'
 import { cn } from '@/lib/utils'
 import { logout, useSession } from '@/services/auth'
-import { useCurrentUser } from '@/services/current-user'
+import { useMe } from '@/services/queries'
 
 type SidebarMode = 'expanded' | 'collapsed'
 // Trạng thái thu gọn sidebar (desktop) — lưu localStorage, giữ sau khi tải lại
@@ -67,12 +67,6 @@ function SidebarBody({
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
           <ProjectNav onNavigate={onNavigate} collapsed={collapsed} />
         </div>
-        {!collapsed && (
-          <p className="bg-muted text-muted-foreground flex gap-2 rounded-md p-2.5 text-xs">
-            <HardDrive className="mt-px size-3.5 shrink-0" aria-hidden />
-            {t('nav.localData')}
-          </p>
-        )}
         {onToggle && (
           <Hint label={toggleLabel} side="right" disabled={!collapsed}>
             <Button
@@ -97,27 +91,34 @@ function SidebarBody({
   )
 }
 
-function HeaderControls() {
+export function LanguageSelect() {
   const { t, locale } = useI18n()
-  const user = useCurrentUser()
+  return (
+    <Select value={locale} onValueChange={(v) => setLocale(v as Locale)}>
+      <SelectTrigger size="sm" aria-label={t('header.language')} className="gap-1.5">
+        <Languages className="text-muted-foreground size-4" aria-hidden />
+        <SelectValue>
+          <span className="sm:hidden">{LOCALES[locale].short}</span>
+          <span className="hidden sm:inline">{LOCALES[locale].label}</span>
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent align="end">
+        {(Object.keys(LOCALES) as Locale[]).map((l) => (
+          <SelectItem key={l} value={l} lang={l}>
+            {LOCALES[l].label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
+function HeaderControls() {
+  const { t } = useI18n()
+  const user = useMe().data?.name ?? ''
   return (
     <div className="ml-auto flex items-center gap-3">
-      <Select value={locale} onValueChange={(v) => setLocale(v as Locale)}>
-        <SelectTrigger size="sm" aria-label={t('header.language')} className="gap-1.5">
-          <Languages className="text-muted-foreground size-4" aria-hidden />
-          <SelectValue>
-            <span className="sm:hidden">{LOCALES[locale].short}</span>
-            <span className="hidden sm:inline">{LOCALES[locale].label}</span>
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent align="end">
-          {(Object.keys(LOCALES) as Locale[]).map((l) => (
-            <SelectItem key={l} value={l} lang={l}>
-              {LOCALES[l].label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <LanguageSelect />
 
       {/* Khối người dùng: avatar + lời chào (từ sm) + đăng xuất nằm chung một khung */}
       <div className="bg-card flex items-center gap-2.5 rounded-lg border p-1 sm:pr-1.5 sm:pl-1">

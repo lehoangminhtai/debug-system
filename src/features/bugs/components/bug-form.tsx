@@ -1,6 +1,29 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Clock, Loader2, Plus, ShieldAlert, Target, X } from 'lucide-react'
-import type { ReactNode } from 'react'
+import {
+  CircleCheck,
+  CircleX,
+  Clock,
+  Flame,
+  FolderKanban,
+  MonitorSmartphone,
+  StickyNote,
+  Type,
+  User,
+  Wrench,
+  FileText,
+  Image as ImageIcon,
+  ListOrdered,
+  Loader2,
+  CircleOff,
+  Plus,
+  ShieldAlert,
+  SlidersHorizontal,
+  Tags,
+  Target,
+  X,
+  type LucideIcon,
+} from 'lucide-react'
+import { useEffect } from 'react'
 import { Controller, useFieldArray, useForm, useWatch, type UseFormRegisterReturn } from 'react-hook-form'
 import { Field, FieldSet } from '@/components/common/field'
 import { Hint } from '@/components/common/hint'
@@ -11,12 +34,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { useUnsavedChangesGuard } from '@/hooks/use-unsaved-changes'
 import { useI18n } from '@/i18n'
-import { PLATFORM_ICON, SEVERITY_META, TONE_TEXT } from '@/lib/meta'
+import { PLATFORM_ICON, PLATFORM_TONE, SEVERITY_META, TONES, type Tone } from '@/lib/meta'
 import { cn } from '@/lib/utils'
-import { MEMBERS, useCurrentUser } from '@/services/current-user'
+import { PersonSelect } from '@/components/common/person-select'
+import { useMe, usePeople } from '@/services/queries'
 import { PLATFORMS, SEVERITIES, type Bug, type Project } from '@/types'
 import { UNASSIGNED, schema, type BugFormValues } from '../bug-form-schema'
 import { ImageField } from './image-field'
+
+/** Màu viền + nền khi được chọn, theo tông của lựa chọn */
+const CHECKED: Record<Tone, string> = {
+  primary: 'has-[:checked]:border-primary has-[:checked]:bg-primary-light/50',
+  info: 'has-[:checked]:border-info has-[:checked]:bg-info-bg',
+  warning: 'has-[:checked]:border-warning has-[:checked]:bg-warning-bg',
+  success: 'has-[:checked]:border-success has-[:checked]:bg-success-bg',
+  destructive: 'has-[:checked]:border-destructive has-[:checked]:bg-destructive-bg',
+  neutral: 'has-[:checked]:border-foreground/40 has-[:checked]:bg-muted',
+}
 
 /** Thẻ radio dùng <input type="radio"> gốc: phím mũi tên, focus khi lỗi và RHF register hoạt động sẵn */
 function RadioCard({
@@ -24,30 +58,37 @@ function RadioCard({
   value,
   title,
   hint,
-  icon,
+  icon: Icon,
+  tone = 'primary',
   describedBy,
 }: {
   registration: UseFormRegisterReturn
   value: string
   title: string
   hint?: string
-  icon?: ReactNode
+  icon?: LucideIcon
+  tone?: Tone
   describedBy?: string
 }) {
   return (
     <label
       className={cn(
         'bg-card flex min-h-11 cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 transition-colors duration-150',
-        'hover:bg-accent has-[:checked]:border-primary has-[:checked]:bg-primary-light/40',
+        'hover:bg-accent',
+        CHECKED[tone],
         'has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-2',
       )}
     >
       <input type="radio" value={value} {...registration} aria-describedby={describedBy} className="peer sr-only" />
       <span
         aria-hidden
-        className="bg-card border-input peer-checked:border-primary mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border peer-checked:border-[5px]"
+        className="bg-card border-input peer-checked:border-primary mt-1.5 flex size-4 shrink-0 items-center justify-center rounded-full border peer-checked:border-[5px]"
       />
-      {icon}
+      {Icon && (
+        <span aria-hidden className={cn('flex size-7 shrink-0 items-center justify-center rounded-md', TONES[tone])}>
+          <Icon className="size-4" />
+        </span>
+      )}
       <span className="min-w-0">
         <span className="block text-sm font-medium">{title}</span>
         {hint && <span className="text-muted-foreground block text-xs">{hint}</span>}
@@ -67,7 +108,8 @@ interface Props {
 
 export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }: Props) {
   const { t } = useI18n()
-  const currentUser = useCurrentUser()
+  const currentUser = useMe().data?.name ?? ''
+  const people = usePeople(currentUser, bug?.reporter, bug?.assignee)
   const isEdit = !!bug
   // Dự án lấy theo ngữ cảnh (bug đang sửa / ?project=) → khóa. Chỉ cho chọn khi vào từ "Tất cả dự án" (chưa có dự án).
   const projectLocked = isEdit || projects.some((p) => p.key === defaultProjectKey)
@@ -102,6 +144,11 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
         },
   })
   const { register, control, formState } = form
+  // Người báo = người đang đăng nhập (me có thể về sau khi form đã mở)
+  const { setValue, getValues } = form
+  useEffect(() => {
+    if (!isEdit && currentUser && !getValues('reporter')) setValue('reporter', currentUser)
+  }, [isEdit, currentUser, getValues, setValue])
   const submitting = formState.isSubmitting
   // Có thay đổi chưa lưu → hỏi trước khi rời trang; khi đang gửi thì cho phép điều hướng sau khi lưu xong
   const leaveDialog = useUnsavedChangesGuard(formState.isDirty && !submitting)
@@ -125,7 +172,7 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
     <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="flex flex-col gap-5">
       {leaveDialog}
       {/* Thông tin chung */}
-      <Section id="general" title={t('form.general')}>
+      <Section id="general" icon={FileText} title={t('form.general')}>
         <div className="flex flex-col gap-4">
           {/* Tiêu đề (8/12) + Dự án (4/12) cùng hàng; mobile xếp dọc */}
           <div className="grid gap-4 md:grid-cols-12">
@@ -133,6 +180,7 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
               id="bug-title"
               className="md:col-span-8"
               label={t('field.title')}
+              icon={Type}
               error={errors.title?.message}
               required
             >
@@ -142,6 +190,7 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
               id="bug-project"
               className="md:col-span-4"
               label={t('field.project')}
+              icon={FolderKanban}
               error={errors.projectId?.message}
               required
             >
@@ -174,18 +223,24 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
             </Field>
           </div>
 
-          <FieldSet id="bug-platform" label={t('field.platform')} error={errors.platform?.message} required>
+          <FieldSet
+            id="bug-platform"
+            label={t('field.platform')}
+            icon={MonitorSmartphone}
+            error={errors.platform?.message}
+            required
+          >
             {(describedBy) => (
-              <div className="grid gap-2 sm:grid-cols-3">
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                 {PLATFORMS.map((p) => {
-                  const Icon = PLATFORM_ICON[p]
                   return (
                     <RadioCard
                       key={p}
                       registration={register('platform')}
                       value={p}
                       title={t(`platform.${p}`)}
-                      icon={<Icon className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden />}
+                      icon={PLATFORM_ICON[p]}
+                      tone={PLATFORM_TONE[p]}
                       describedBy={describedBy}
                     />
                   )
@@ -197,11 +252,11 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
       </Section>
 
       {/* Phân loại */}
-      <Section id="classify" title={t('form.classify')} description={t('form.classifyDesc')}>
+      <Section id="classify" icon={Tags} title={t('form.classify')} description={t('form.classifyDesc')}>
         <div className="flex flex-col gap-5">
           {project && (
             <div className="bg-muted flex gap-2.5 rounded-md p-3 text-sm">
-              <Target className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden />
+              <Target className="text-primary mt-0.5 size-4 shrink-0" aria-hidden />
               <div className="min-w-0">
                 <p className="font-medium">{t('form.coreFeatures', { name: project.name })}</p>
                 <p className="text-muted-foreground break-words">{project.description}</p>
@@ -209,12 +264,14 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
             </div>
           )}
 
-          <FieldSet id="bug-core" label={t('field.isCore')} error={errors.isCore?.message} required>
+          <FieldSet id="bug-core" label={t('field.isCore')} icon={Target} error={errors.isCore?.message} required>
             {(describedBy) => (
               <div className="grid gap-2 sm:grid-cols-2">
                 <RadioCard
                   registration={register('isCore')}
                   value="yes"
+                  icon={Target}
+                  tone="destructive"
                   title={t('core.yes')}
                   hint={t('core.yesHint')}
                   describedBy={describedBy}
@@ -222,6 +279,8 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
                 <RadioCard
                   registration={register('isCore')}
                   value="no"
+                  icon={CircleOff}
+                  tone="neutral"
                   title={t('core.no')}
                   hint={t('core.noHint')}
                   describedBy={describedBy}
@@ -230,11 +289,17 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
             )}
           </FieldSet>
 
-          <FieldSet id="bug-severity" label={t('field.severity')} error={errors.severity?.message} required>
+          <FieldSet
+            id="bug-severity"
+            label={t('field.severity')}
+            icon={Flame}
+            error={errors.severity?.message}
+            required
+          >
             {(describedBy) => (
               <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                 {SEVERITIES.map((s) => {
-                  const { icon: Icon, tone } = SEVERITY_META[s]
+                  const { icon, tone } = SEVERITY_META[s]
                   return (
                     <RadioCard
                       key={s}
@@ -242,7 +307,8 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
                       value={s}
                       title={t(`severity.${s}`)}
                       hint={t(`severity.${s}Hint`)}
-                      icon={<Icon className={cn('mt-0.5 size-4 shrink-0', TONE_TEXT[tone])} aria-hidden />}
+                      icon={icon}
+                      tone={tone}
                       describedBy={describedBy}
                     />
                   )
@@ -255,9 +321,9 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
             aria-live="polite"
             className={cn(
               'flex items-center gap-2 rounded-md px-3 py-2.5 text-sm',
-              handling === 'mustFix'
-                ? 'bg-destructive-bg text-destructive-text font-medium'
-                : 'bg-muted text-muted-foreground',
+              handling === 'mustFix' && 'bg-destructive-bg text-destructive-text font-medium',
+              handling === 'whenPossible' && 'bg-info-bg text-info-text font-medium',
+              (handling === 'later' || !handling) && 'bg-muted text-muted-foreground',
             )}
           >
             {handling === 'mustFix' ? (
@@ -280,9 +346,9 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
       </Section>
 
       {/* Tái tạo */}
-      <Section id="repro" title={t('form.repro')} description={t('form.reproDesc')}>
+      <Section id="repro" icon={ListOrdered} title={t('form.repro')} description={t('form.reproDesc')}>
         <div className="flex flex-col gap-4">
-          <FieldSet id="bug-steps" label={t('field.steps')} error={stepsError} required>
+          <FieldSet id="bug-steps" label={t('field.steps')} icon={ListOrdered} error={stepsError} required>
             {(describedBy) => (
               <div className="flex flex-col gap-2">
                 <ol className="flex flex-col gap-2">
@@ -345,12 +411,18 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
           </FieldSet>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <Field id="bug-expected" label={t('field.expected')} error={errors.expected?.message} required>
+            <Field
+              id="bug-expected"
+              label={t('field.expected')}
+              icon={CircleCheck}
+              error={errors.expected?.message}
+              required
+            >
               {(c) => (
                 <Textarea {...c} {...register('expected')} rows={3} placeholder={t('form.expectedPlaceholder')} />
               )}
             </Field>
-            <Field id="bug-actual" label={t('field.actual')} error={errors.actual?.message} required>
+            <Field id="bug-actual" label={t('field.actual')} icon={CircleX} error={errors.actual?.message} required>
               {(c) => <Textarea {...c} {...register('actual')} rows={3} placeholder={t('form.actualPlaceholder')} />}
             </Field>
           </div>
@@ -360,6 +432,7 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
       {/* Ảnh minh chứng */}
       <Section
         id="images"
+        icon={ImageIcon}
         title={
           <span className="flex items-center gap-2">
             {t('field.images')}
@@ -380,62 +453,54 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
       </Section>
 
       {/* Khác */}
-      <Section id="other" title={t('form.other')}>
+      <Section id="other" icon={SlidersHorizontal} title={t('form.other')}>
         <div className="flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field id="bug-reporter" label={t('field.reporter')} error={errors.reporter?.message} required>
+            <Field id="bug-reporter" label={t('field.reporter')} icon={User} error={errors.reporter?.message} required>
               {(c) => (
                 <Controller
                   control={control}
                   name="reporter"
                   render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger {...c} ref={field.ref} className="w-full">
-                        <SelectValue placeholder={t('form.selectPerson')} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {MEMBERS.map((m) => (
-                          <SelectItem key={m} value={m}>
-                            {m}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <PersonSelect
+                      {...c}
+                      ref={field.ref}
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      people={people}
+                      disabled // người báo = người đang đăng nhập, không gán cho người khác
+                      className="disabled:bg-muted disabled:text-foreground disabled:opacity-100"
+                    />
                   )}
                 />
               )}
             </Field>
-            <Field id="bug-assignee" label={t('field.assignee')}>
+            <Field id="bug-assignee" label={t('field.assignee')} icon={Wrench}>
               {(c) => (
                 <Controller
                   control={control}
                   name="assignee"
                   render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger {...c} ref={field.ref} className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={UNASSIGNED}>{t('table.unassigned')}</SelectItem>
-                        {MEMBERS.map((m) => (
-                          <SelectItem key={m} value={m}>
-                            {m}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <PersonSelect
+                      {...c}
+                      ref={field.ref}
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      people={people}
+                      none={{ value: UNASSIGNED, label: t('table.unassigned') }}
+                    />
                   )}
                 />
               )}
             </Field>
           </div>
-          <Field id="bug-note" label={t('field.note')} error={errors.note?.message}>
+          <Field id="bug-note" label={t('field.note')} icon={StickyNote} error={errors.note?.message}>
             {(c) => <Textarea {...c} {...register('note')} rows={3} placeholder={t('form.notePlaceholder')} />}
           </Field>
         </div>
       </Section>
 
-      <div className="bg-card/95 sticky bottom-0 z-10 -mx-4 flex justify-end gap-2 border-t px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+      <div className="bg-card/95 sticky bottom-0 z-10 -mx-4 -mb-4 flex justify-end gap-2 border-t px-4 py-3 backdrop-blur sm:-mx-6 sm:-mb-6 sm:px-6 xl:-mx-8 xl:px-8">
         <Button type="button" variant="outline" onClick={onCancel}>
           {t('action.cancel')}
         </Button>

@@ -1,3 +1,4 @@
+import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Label } from '@/components/ui/label'
 import { useI18n, type TKey } from '@/i18n'
@@ -13,6 +14,7 @@ export interface ControlProps {
 interface BaseProps {
   id: string
   label: ReactNode
+  icon?: LucideIcon
   hint?: ReactNode
   /** Thông điệp từ zod dạng "v.tooLong|200" (key i18n | tham số max) */
   error?: string
@@ -50,6 +52,7 @@ function useMessage(id: string, error?: string, hint?: ReactNode) {
 export function Field({
   id,
   label,
+  icon: Icon,
   hint,
   error,
   required,
@@ -59,7 +62,8 @@ export function Field({
   const { describedBy, message } = useMessage(id, error, hint)
   return (
     <div className={cn('flex flex-col gap-1.5', className)}>
-      <Label htmlFor={id} className="text-sm font-medium">
+      <Label htmlFor={id} className="gap-1.5 text-sm font-medium">
+        {Icon && <Icon className="text-primary size-4 shrink-0" aria-hidden />}
         {label}
         {required && <RequiredMark />}
       </Label>
@@ -78,6 +82,7 @@ export function Field({
 export function FieldSet({
   id,
   label,
+  icon: Icon,
   hint,
   error,
   required,
@@ -87,7 +92,8 @@ export function FieldSet({
   const { describedBy, message } = useMessage(id, error, hint)
   return (
     <fieldset id={id} className={cn('flex flex-col gap-1.5', className)} aria-invalid={!!error || undefined}>
-      <legend className="mb-1.5 flex items-center gap-1 text-sm font-medium">
+      <legend className="mb-1.5 flex items-center gap-1.5 text-sm font-medium">
+        {Icon && <Icon className="text-primary size-4 shrink-0" aria-hidden />}
         {label}
         {required && <RequiredMark />}
       </legend>
