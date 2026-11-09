@@ -24,9 +24,16 @@ export interface Project {
 
 export interface BugImage {
   id: number
+  /** Backend cũ chưa trả → coi là ảnh */
+  type: 'image' | 'video'
   url: string
   caption: string
+  /** Byte (0 nếu không rõ) */
+  size: number
 }
+
+/** File minh chứng khi lưu bug: giữ file cũ theo `url`, hoặc file mới (ảnh/video) */
+export type BugMediaInput = { url: string; caption: string } | { file: Blob; name: string; caption: string }
 
 /** Lưu dạng mã + tham số để dịch được khi hiển thị (spec §2.2: dịch cả lịch sử) */
 export type HistoryAction = 'create' | 'claim' | 'assign' | 'unassign' | 'status' | 'edit'
@@ -70,15 +77,17 @@ export interface BugInput {
   projectId: number
   title: string
   platform: Platform[]
-  isCore: boolean
-  severity: Severity
+  /** Không gửi = backend mặc định (tạo mới) / giữ nguyên (sửa) */
+  isCore?: boolean
+  severity?: Severity
   steps: string
   expected: string
   actual: string
   note: string
   reporter: string
   assignee: string | null
-  images: Omit<BugImage, 'id'>[]
+  /** Danh sách đầy đủ sau khi sửa ([] = xoá hết) */
+  images: BugMediaInput[]
 }
 
 export interface ProjectInput {
@@ -144,7 +153,7 @@ export interface FeatureInput {
   current: string
   desired: string
   benefit: string
-  priority: Priority
+  priority?: Priority
   requester: string
   assignee: string | null
   /** Danh sách đầy đủ sau khi sửa ([] = xoá hết) */

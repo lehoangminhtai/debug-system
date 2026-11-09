@@ -238,7 +238,8 @@ export function useAssignFeature() {
 export function useDeleteFeature() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ code, otp }: { code: string; otp: string }) => api.deleteFeature(code, otp),
+    mutationFn: ({ code, confirm, otp }: { code: string; confirm: string; otp: string }) =>
+      api.deleteFeature(code, confirm, otp),
     onSuccess: (_d, { code }) => {
       qc.removeQueries({ queryKey: keys.feature(code) })
       return Promise.all([

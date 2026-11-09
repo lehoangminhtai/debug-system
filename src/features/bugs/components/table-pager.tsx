@@ -2,7 +2,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Hint } from '@/components/common/hint'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n'
-import { PAGE_SIZE } from '../hooks/use-bug-filters'
+import { PAGE_SIZE } from '@/features/items/hooks/use-item-filters'
 
 /** Phân trang gọn cho thanh công cụ phía trên bảng: "1–10 / 13  ‹ ›" */
 export function TablePager({

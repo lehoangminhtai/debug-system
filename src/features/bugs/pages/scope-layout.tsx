@@ -1,6 +1,7 @@
-import { KanbanSquare, Lightbulb, List, Plus } from 'lucide-react'
+import { KanbanSquare, List, Plus } from 'lucide-react'
+import { Suspense, lazy } from 'react'
 import { toast } from 'sonner'
-import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { NavLink, Navigate, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { OtpDeleteButton } from '@/components/common/otp-dialog'
 import { ErrorState } from '@/components/common/states'
 import { Button } from '@/components/ui/button'
@@ -13,6 +14,11 @@ import type { Project } from '@/types'
 import { useDeleteProject, useProjects } from '@/services/queries'
 import { ReleaseStatus } from '../components/release-status'
 import type { ScopeContext } from '../hooks/use-scope'
+
+// Modal tạo mới (2 form + zod + xử lý ảnh/video) chỉ tải khi mở lần đầu
+const CreateItemDialog = lazy(() =>
+  import('@/features/items/components/create-item-dialog').then((m) => ({ default: m.CreateItemDialog })),
+)
 
 const tabClass = ({ isActive }: { isActive: boolean }) =>
   cn(
@@ -43,18 +49,34 @@ function DeleteProjectButton({ project }: { project: Project }) {
 
 /**
  * Khung chung cho Danh sách và Kanban: tiêu đề phạm vi, trạng thái release, tab.
- * kind="features": cùng khung cho Tính năng mong muốn (/FF/features, /FF/features/board) — không có trạng thái release.
+ * Bug và Tính năng mong muốn chung một bảng (lọc theo cột "Loại"), một nút "Tạo mới" (chọn loại trên form).
  */
-export function ScopeLayout({ kind = 'bugs' }: { kind?: 'bugs' | 'features' }) {
-  const isFeature = kind === 'features'
+export function ScopeLayout() {
   const { t } = useI18n()
   const { scope = 'all' } = useParams()
   const { pathname, search } = useLocation()
+  const [params, setParams] = useSearchParams()
   const projects = useProjects()
+
+  // Modal "Tạo mới" mở theo ?create=bug|feature → link cũ /new, /bugs/new, /features/new cũng mở được modal
+  const createParam = params.get('create')
+  const createType = createParam === 'feature' ? 'feature' : createParam ? 'bug' : null
+  const setCreate = (v: string | null) =>
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        if (v) next.set('create', v)
+        else next.delete('create')
+        return next
+      },
+      { replace: true },
+    )
+  // đang lọc "Loại" → chọn sẵn loại đó trong modal
+  const openCreate = () => setCreate(params.get('type') === 'feature' ? 'feature' : 'bug')
 
   const project = scope === 'all' ? null : (projects.data?.find((p) => p.key === scope) ?? null)
   const title = project ? project.name : t('nav.allProjects')
-  useDocumentTitle(projects.isPending ? undefined : isFeature ? `${t('nav.features')} · ${title}` : title)
+  useDocumentTitle(projects.isPending ? undefined : title)
 
   if (projects.isError) return <ErrorState onRetry={() => projects.refetch()} className="py-24" titleAs="h1" />
   // /ff → /FF: mã dự án luôn in hoa, gõ thường vẫn tới đúng trang
@@ -70,14 +92,15 @@ export function ScopeLayout({ kind = 'bugs' }: { kind?: 'bugs' | 'features' }) {
   if (projects.isSuccess && scope !== 'all' && !project)
     return <NotFoundPage title={t('error.projectNotFound', { key: scope })} />
 
-  const ctx: ScopeContext = { project, projects: projects.data ?? [], isPending: projects.isPending }
+  const ctx: ScopeContext = { project, projects: projects.data ?? [], isPending: projects.isPending, openCreate }
   // giữ bộ lọc chung khi chuyển Danh sách ↔ Kanban (bỏ status vì Kanban đã chia cột theo trạng thái)
   const keep = new URLSearchParams(search)
   keep.delete('status')
+  keep.delete('fstatus')
   keep.delete('severity')
+  keep.delete('create')
   const keepSearch = keep.size ? `?${keep}` : ''
-  const base = isFeature ? `/${scope}/features` : `/${scope}`
-  const newUrl = `/${isFeature ? 'features' : 'bugs'}/new${project ? `?project=${project.key}` : ''}`
+  const base = `/${scope}`
 
   return (
     <div className="flex flex-1 flex-col gap-4">
@@ -96,19 +119,10 @@ export function ScopeLayout({ kind = 'bugs' }: { kind?: 'bugs' | 'features' }) {
             </h1>
           )}
           {project && <p className="text-muted-foreground mt-1 max-w-2xl text-sm">{project.description}</p>}
-          {isFeature ? (
-            <p className="bg-primary-light text-primary-hover mt-2.5 inline-flex max-w-2xl gap-1.5 rounded-md px-2.5 py-1 text-sm">
-              <Lightbulb className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <span>
-                <span className="font-medium whitespace-nowrap">{t('nav.features')}</span> · {t('feature.subtitle')}
-              </span>
-            </p>
-          ) : (
-            projects.isSuccess && (
-              <div className="mt-2.5">
-                <ReleaseStatus project={project} projects={ctx.projects} />
-              </div>
-            )
+          {projects.isSuccess && (
+            <div className="mt-2.5">
+              <ReleaseStatus project={project} projects={ctx.projects} />
+            </div>
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -126,16 +140,25 @@ export function ScopeLayout({ kind = 'bugs' }: { kind?: 'bugs' | 'features' }) {
             </NavLink>
           </nav>
           {project && <DeleteProjectButton project={project} />}
-          <Button asChild>
-            <Link to={newUrl}>
-              <Plus aria-hidden />
-              {t(isFeature ? 'feature.new' : 'action.reportBug')}
-            </Link>
+          <Button onClick={openCreate}>
+            <Plus aria-hidden />
+            {t('action.createItem')}
           </Button>
         </div>
       </div>
 
       <Outlet context={ctx} />
+
+      {createType && projects.isSuccess && (
+        <Suspense>
+          <CreateItemDialog
+            openType={createType}
+            onClose={() => setCreate(null)}
+            projects={projects.data}
+            projectKey={project?.key}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }

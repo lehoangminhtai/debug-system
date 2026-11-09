@@ -11,8 +11,11 @@ import { useBug, useCreateBug, useProjects, useUpdateBug } from '@/services/quer
 import { toBugInput, type BugFormValues } from '../bug-form-schema'
 import { BugForm } from '../components/bug-form'
 
-/** Báo bug mới (/bugs/new?project=FF) và sửa bug (/bugs/:code/edit) dùng chung một form */
-export function BugFormPage() {
+/**
+ * Sửa bug (/bugs/:code/edit). Tạo mới nằm trong trang chung /new (chọn Bug | Tính năng mong muốn):
+ * `embedded` → không vẽ tiêu đề/breadcrumb, không đặt tiêu đề tab (trang /new lo phần đó).
+ */
+export function BugFormPage({ embedded = false }: { embedded?: boolean }) {
   const { code } = useParams()
   const [params] = useSearchParams()
   const { t } = useI18n()
@@ -26,7 +29,7 @@ export function BugFormPage() {
   const update = useUpdateBug(code ?? '')
 
   const title = isEdit ? t('form.editTitle', { code: code ?? '' }) : t('form.newTitle')
-  useDocumentTitle(title)
+  useDocumentTitle(embedded ? undefined : title)
 
   const goBack = (fallback: string) => (location.key !== 'default' ? navigate(-1) : navigate(fallback))
 
@@ -70,16 +73,18 @@ export function BugFormPage() {
 
   return (
     <div className="flex w-full flex-col gap-5">
-      <header className="flex flex-col gap-3">
-        <Breadcrumb items={crumbs} />
-        <h1 className="text-xl font-semibold">{title}</h1>
-      </header>
+      {!embedded && (
+        <header className="flex flex-col gap-3">
+          <Breadcrumb items={crumbs} />
+          <h1 className="text-xl font-semibold">{title}</h1>
+        </header>
+      )}
       <BugForm
         projects={projects.data}
         bug={bugQuery.data}
         defaultProjectKey={params.get('project')}
         onSubmit={onSubmit}
-        onCancel={() => goBack(isEdit ? `/bugs/${code}` : '/all')}
+        onCancel={() => goBack(isEdit ? `/bugs/${code}` : `/${project?.key ?? 'all'}`)}
       />
     </div>
   )

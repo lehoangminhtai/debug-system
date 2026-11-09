@@ -11,8 +11,11 @@ import { useCreateFeature, useFeature, useProjects, useUpdateFeature } from '@/s
 import { FeatureForm } from '../components/feature-form'
 import { toFeatureInput, type FeatureFormValues } from '../feature-form-schema'
 
-/** Đề xuất mới (/features/new?project=FF) và sửa (/features/:code/edit) dùng chung một form */
-export function FeatureFormPage() {
+/**
+ * Sửa đề xuất (/features/:code/edit). Tạo mới nằm trong trang chung /new (chọn Bug | Tính năng mong muốn):
+ * `embedded` → không vẽ tiêu đề/breadcrumb, không đặt tiêu đề tab.
+ */
+export function FeatureFormPage({ embedded = false }: { embedded?: boolean }) {
   const { code } = useParams()
   const [params] = useSearchParams()
   const { t } = useI18n()
@@ -26,7 +29,7 @@ export function FeatureFormPage() {
   const update = useUpdateFeature(code ?? '')
 
   const title = isEdit ? t('form.editTitle', { code: code ?? '' }) : t('feature.new')
-  useDocumentTitle(title)
+  useDocumentTitle(embedded ? undefined : title)
 
   if (projects.isPending || (isEdit && featureQuery.isPending))
     return (
@@ -50,7 +53,7 @@ export function FeatureFormPage() {
   const project = projects.data.find((p) =>
     isEdit ? p.id === featureQuery.data?.projectId : p.key === params.get('project'),
   )
-  const listUrl = `/${project?.key ?? 'all'}/features`
+  const listUrl = `/${project?.key ?? 'all'}?type=feature`
   const goBack = () => (location.key !== 'default' ? navigate(-1) : navigate(isEdit ? `/features/${code}` : listUrl))
 
   // Lỗi do MutationCache toast chung; lỗi OTP hiện trong hộp thoại OTP
@@ -74,10 +77,12 @@ export function FeatureFormPage() {
 
   return (
     <div className="flex w-full flex-col gap-5">
-      <header className="flex flex-col gap-3">
-        <Breadcrumb items={crumbs} />
-        <h1 className="text-xl font-semibold">{title}</h1>
-      </header>
+      {!embedded && (
+        <header className="flex flex-col gap-3">
+          <Breadcrumb items={crumbs} />
+          <h1 className="text-xl font-semibold">{title}</h1>
+        </header>
+      )}
       <FeatureForm
         projects={projects.data}
         feature={featureQuery.data}

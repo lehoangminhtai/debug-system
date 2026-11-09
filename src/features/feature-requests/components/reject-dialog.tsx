@@ -52,7 +52,6 @@ export function RejectDialog({
               id="reject-reason"
               autoFocus
               rows={3}
-              maxLength={1000}
               value={reason}
               onChange={(e) => {
                 setReason(e.target.value)

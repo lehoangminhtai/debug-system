@@ -7,6 +7,8 @@ export interface ScopeContext {
   project: Project | null
   projects: Project[]
   isPending: boolean
+  /** Mở modal "Tạo mới" (Bug | Tính năng mong muốn) */
+  openCreate: () => void
 }
 
 export const useScope = () => useOutletContext<ScopeContext>()

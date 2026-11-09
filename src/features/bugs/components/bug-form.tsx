@@ -41,7 +41,7 @@ import { PersonSelect } from '@/components/common/person-select'
 import { useMe, usePeople } from '@/services/queries'
 import { PLATFORMS, SEVERITIES, type Bug, type Project } from '@/types'
 import { UNASSIGNED, schema, type BugFormValues } from '../bug-form-schema'
-import { ImageField } from './image-field'
+import { MediaField } from '@/components/common/media-field'
 
 interface Props {
   projects: Project[]
@@ -50,9 +50,21 @@ interface Props {
   /** Trả về promise: form ở trạng thái đang gửi (nút khóa, không chặn điều hướng) đến khi promise kết thúc */
   onSubmit: (values: BugFormValues, otp: string) => Promise<unknown>
   onCancel: () => void
+  /** Form nằm trong modal tạo mới: footer theo lề modal */
+  inDialog?: boolean
+  /** Báo form có thay đổi chưa lưu (modal hỏi trước khi đóng) */
+  onDirtyChange?: (dirty: boolean) => void
 }
 
-export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }: Props) {
+export function BugForm({
+  projects,
+  bug,
+  defaultProjectKey,
+  onSubmit,
+  onCancel,
+  inDialog = false,
+  onDirtyChange,
+}: Props) {
   const { t } = useI18n()
   const currentUser = useMe().data?.name ?? ''
   const people = usePeople(currentUser, bug?.reporter, bug?.assignee)
@@ -75,7 +87,7 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
           note: bug.note,
           reporter: bug.reporter,
           assignee: bug.assignee ?? UNASSIGNED,
-          images: bug.images.map(({ url, caption }) => ({ url, caption })),
+          images: bug.images.map(({ id, type, url, caption, size }) => ({ id, type, url, caption, size })),
         }
       : {
           projectId: String(projects.find((p) => p.key === defaultProjectKey)?.id ?? ''),
@@ -110,6 +122,8 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
   }
   // Có thay đổi chưa lưu → hỏi trước khi rời trang; khi đang gửi thì cho phép điều hướng sau khi lưu xong
   const leaveDialog = useUnsavedChangesGuard(formState.isDirty && !submitting)
+  const isDirty = formState.isDirty
+  useEffect(() => onDirtyChange?.(isDirty), [isDirty, onDirtyChange])
   const { errors } = formState
   const steps = useFieldArray({ control, name: 'steps' })
 
@@ -141,9 +155,8 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
               label={t('field.title')}
               icon={Type}
               error={errors.title?.message}
-              required
             >
-              {(c) => <Input {...c} {...register('title')} maxLength={200} placeholder={t('form.titlePlaceholder')} />}
+              {(c) => <Input {...c} {...register('title')} placeholder={t('form.titlePlaceholder')} />}
             </Field>
             <Field
               id="bug-project"
@@ -187,7 +200,6 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
             label={t('field.platform')}
             icon={MonitorSmartphone}
             error={errors.platform?.message}
-            required
           >
             {(describedBy) => (
               <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
@@ -224,7 +236,7 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
             </div>
           )}
 
-          <FieldSet id="bug-core" label={t('field.isCore')} icon={Target} error={errors.isCore?.message} required>
+          <FieldSet id="bug-core" label={t('field.isCore')} icon={Target} error={errors.isCore?.message}>
             {(describedBy) => (
               <div className="grid gap-2 sm:grid-cols-2">
                 <RadioCard
@@ -249,13 +261,7 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
             )}
           </FieldSet>
 
-          <FieldSet
-            id="bug-severity"
-            label={t('field.severity')}
-            icon={Flame}
-            error={errors.severity?.message}
-            required
-          >
+          <FieldSet id="bug-severity" label={t('field.severity')} icon={Flame} error={errors.severity?.message}>
             {(describedBy) => (
               <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                 {SEVERITIES.map((s) => {
@@ -308,7 +314,7 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
       {/* Tái tạo */}
       <Section id="repro" icon={ListOrdered} title={t('form.repro')} description={t('form.reproDesc')}>
         <div className="flex flex-col gap-4">
-          <FieldSet id="bug-steps" label={t('field.steps')} icon={ListOrdered} error={stepsError} required>
+          <FieldSet id="bug-steps" label={t('field.steps')} icon={ListOrdered} error={stepsError}>
             {(describedBy) => (
               <div className="flex flex-col gap-2">
                 <ol className="flex flex-col gap-2">
@@ -329,7 +335,6 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
                         aria-describedby={describedBy}
                         aria-invalid={!!errors.steps?.[i]?.value || (!!stepsError && i === 0) || undefined}
                         placeholder={t('form.stepPlaceholder', { n: i + 1 })}
-                        maxLength={500}
                         onKeyDown={(e) => {
                           // Enter ở bước cuối → thêm bước mới
                           if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
@@ -361,7 +366,6 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
                   size="sm"
                   className="self-start"
                   onClick={() => steps.append({ value: '' })}
-                  disabled={steps.fields.length >= 30}
                 >
                   <Plus aria-hidden />
                   {t('action.addStep')}
@@ -371,18 +375,12 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
           </FieldSet>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <Field
-              id="bug-expected"
-              label={t('field.expected')}
-              icon={CircleCheck}
-              error={errors.expected?.message}
-              required
-            >
+            <Field id="bug-expected" label={t('field.expected')} icon={CircleCheck} error={errors.expected?.message}>
               {(c) => (
                 <Textarea {...c} {...register('expected')} rows={3} placeholder={t('form.expectedPlaceholder')} />
               )}
             </Field>
-            <Field id="bug-actual" label={t('field.actual')} icon={CircleX} error={errors.actual?.message} required>
+            <Field id="bug-actual" label={t('field.actual')} icon={CircleX} error={errors.actual?.message}>
               {(c) => <Textarea {...c} {...register('actual')} rows={3} placeholder={t('form.actualPlaceholder')} />}
             </Field>
           </div>
@@ -407,7 +405,7 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
           control={control}
           name="images"
           render={({ field }) => (
-            <ImageField id="bug-images" value={field.value} onChange={field.onChange} describedBy="bug-images-hint" />
+            <MediaField id="bug-images" value={field.value} onChange={field.onChange} describedBy="bug-images-hint" />
           )}
         />
       </Section>
@@ -416,7 +414,7 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
       <Section id="other" icon={SlidersHorizontal} title={t('form.other')}>
         <div className="flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field id="bug-reporter" label={t('field.reporter')} icon={User} error={errors.reporter?.message} required>
+            <Field id="bug-reporter" label={t('field.reporter')} icon={User} error={errors.reporter?.message}>
               {(c) => (
                 <Controller
                   control={control}
@@ -460,7 +458,13 @@ export function BugForm({ projects, bug, defaultProjectKey, onSubmit, onCancel }
         </div>
       </Section>
 
-      <div className="bg-card/95 sticky bottom-0 z-10 -mx-4 -mb-4 flex justify-end gap-2 border-t px-4 py-3 backdrop-blur sm:-mx-6 sm:-mb-6 sm:px-6 xl:-mx-8 xl:px-8">
+      <div
+        className={cn(
+          'bg-card/95 sticky bottom-0 z-10 flex justify-end gap-2 border-t py-3 backdrop-blur',
+          // trong modal: bám đúng lề p-6 của DialogContent; trên trang: bám lề của layout
+          inDialog ? '-mx-6 -mb-6 rounded-b-xl px-6' : '-mx-4 -mb-4 px-4 sm:-mx-6 sm:-mb-6 sm:px-6 xl:-mx-8 xl:px-8',
+        )}
+      >
         <Button type="button" variant="outline" onClick={onCancel}>
           {t('action.cancel')}
         </Button>

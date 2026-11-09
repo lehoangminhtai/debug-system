@@ -23,9 +23,10 @@ import { ApiError } from '@/services/api'
 import { errorMessage, useCreateProject } from '@/services/queries'
 
 const schema = z.object({
-  key: z.string().trim(), // tạm thời không validate ở FE, server kiểm tra (invalid_key / duplicate_key)
-  name: z.string().trim().min(1, 'v.required').max(60, 'v.tooLong|60'),
-  description: z.string().trim().min(1, 'v.required').max(500, 'v.tooLong|500'),
+  // Không giới hạn số ký tự; định dạng (chữ + số) do server kiểm tra (invalid_key / duplicate_key)
+  key: z.string().trim().min(1, 'v.required'),
+  name: z.string().trim().min(1, 'v.required'),
+  description: z.string().trim().min(1, 'v.required'),
 })
 type Values = z.infer<typeof schema>
 
@@ -88,8 +89,20 @@ export function NewProjectDialog({ open, onOpenChange, onCreated }: Props) {
             icon={Hash}
             hint={t('project.keyHint')}
             error={errors.key?.message}
+            required
           >
-            {(c) => <Input {...c} {...keyField} autoComplete="off" className="w-28 font-mono" />}
+            {(c) => (
+              <Input
+                {...c}
+                {...keyField}
+                onChange={(e) => {
+                  e.target.value = e.target.value.toUpperCase()
+                  return keyField.onChange(e)
+                }}
+                autoComplete="off"
+                className="w-full font-mono sm:w-60"
+              />
+            )}
           </Field>
           <Field id="project-name" label={t('field.name')} icon={FolderKanban} error={errors.name?.message} required>
             {(c) => <Input {...c} {...form.register('name')} placeholder={t('project.namePlaceholder')} />}

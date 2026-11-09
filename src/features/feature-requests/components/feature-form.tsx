@@ -28,12 +28,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { UNASSIGNED } from '@/features/bugs/bug-form-schema'
 import { useUnsavedChangesGuard } from '@/hooks/use-unsaved-changes'
+import { cn } from '@/lib/utils'
 import { useI18n, type TKey } from '@/i18n'
 import { PLATFORM_ICON, PLATFORM_TONE, PRIORITY_META } from '@/lib/meta'
 import { useMe, usePeople } from '@/services/queries'
 import { PLATFORMS, PRIORITIES, type Feature, type Project } from '@/types'
 import { schema, type FeatureFormValues } from '../feature-form-schema'
-import { MediaField } from './media-field'
+import { MediaField } from '@/components/common/media-field'
 
 interface Props {
   projects: Project[]
@@ -41,9 +42,21 @@ interface Props {
   defaultProjectKey?: string | null
   onSubmit: (values: FeatureFormValues, otp: string) => Promise<unknown>
   onCancel: () => void
+  /** Form nằm trong modal tạo mới: footer theo lề modal */
+  inDialog?: boolean
+  /** Báo form có thay đổi chưa lưu (modal hỏi trước khi đóng) */
+  onDirtyChange?: (dirty: boolean) => void
 }
 
-export function FeatureForm({ projects, feature, defaultProjectKey, onSubmit, onCancel }: Props) {
+export function FeatureForm({
+  projects,
+  feature,
+  defaultProjectKey,
+  onSubmit,
+  onCancel,
+  inDialog = false,
+  onDirtyChange,
+}: Props) {
   const { t } = useI18n()
   const currentUser = useMe().data?.name ?? ''
   const people = usePeople(currentUser, feature?.requester, feature?.assignee)
@@ -96,13 +109,15 @@ export function FeatureForm({ projects, feature, defaultProjectKey, onSubmit, on
     }
   }
   const leaveDialog = useUnsavedChangesGuard(formState.isDirty && !sending)
+  const isDirty = formState.isDirty
+  useEffect(() => onDirtyChange?.(isDirty), [isDirty, onDirtyChange])
 
   return (
     <form onSubmit={form.handleSubmit((values) => setPending(values))} noValidate className="flex flex-col gap-5">
       {leaveDialog}
       <OtpDialog open={!!pending} onOpenChange={(o) => !o && setPending(null)} onSubmit={sendWithOtp} />
 
-      <Section id="general" icon={FileText} title={t('form.general')}>
+      <Section id="feature-general" icon={FileText} title={t('form.general')}>
         <div className="flex flex-col gap-5">
           <div className="grid gap-4 md:grid-cols-12">
             <Field
@@ -111,11 +126,8 @@ export function FeatureForm({ projects, feature, defaultProjectKey, onSubmit, on
               label={t('field.title')}
               icon={Type}
               error={errors.title?.message}
-              required
             >
-              {(c) => (
-                <Input {...c} {...register('title')} maxLength={200} placeholder={t('feature.titlePlaceholder')} />
-              )}
+              {(c) => <Input {...c} {...register('title')} placeholder={t('feature.titlePlaceholder')} />}
             </Field>
             <Field
               id="feature-project"
@@ -159,7 +171,6 @@ export function FeatureForm({ projects, feature, defaultProjectKey, onSubmit, on
             label={t('field.platform')}
             icon={MonitorSmartphone}
             error={errors.platform?.message}
-            required
           >
             {(describedBy) => (
               <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
@@ -179,13 +190,7 @@ export function FeatureForm({ projects, feature, defaultProjectKey, onSubmit, on
             )}
           </FieldSet>
 
-          <FieldSet
-            id="feature-priority"
-            label={t('field.priority')}
-            icon={Flag}
-            error={errors.priority?.message}
-            required
-          >
+          <FieldSet id="feature-priority" label={t('field.priority')} icon={Flag} error={errors.priority?.message}>
             {(describedBy) => (
               <div className="grid gap-2 sm:grid-cols-3">
                 {PRIORITIES.map((p) => (
@@ -206,60 +211,33 @@ export function FeatureForm({ projects, feature, defaultProjectKey, onSubmit, on
         </div>
       </Section>
 
-      <Section id="content" icon={Lightbulb} title={t('feature.content')} description={t('feature.contentDesc')}>
+      <Section
+        id="feature-content"
+        icon={Lightbulb}
+        title={t('feature.content')}
+        description={t('feature.contentDesc')}
+      >
         <div className="flex flex-col gap-4">
           <div className="grid gap-4 md:grid-cols-2">
-            <Field
-              id="feature-current"
-              label={t('field.current')}
-              icon={Clock}
-              error={errors.current?.message}
-              required
-            >
+            <Field id="feature-current" label={t('field.current')} icon={Clock} error={errors.current?.message}>
               {(c) => (
-                <Textarea
-                  {...c}
-                  {...register('current')}
-                  rows={4}
-                  maxLength={2000}
-                  placeholder={t('feature.currentPlaceholder')}
-                />
+                <Textarea {...c} {...register('current')} rows={4} placeholder={t('feature.currentPlaceholder')} />
               )}
             </Field>
-            <Field
-              id="feature-desired"
-              label={t('field.desired')}
-              icon={Sparkles}
-              error={errors.desired?.message}
-              required
-            >
+            <Field id="feature-desired" label={t('field.desired')} icon={Sparkles} error={errors.desired?.message}>
               {(c) => (
-                <Textarea
-                  {...c}
-                  {...register('desired')}
-                  rows={4}
-                  maxLength={2000}
-                  placeholder={t('feature.desiredPlaceholder')}
-                />
+                <Textarea {...c} {...register('desired')} rows={4} placeholder={t('feature.desiredPlaceholder')} />
               )}
             </Field>
           </div>
           <Field id="feature-benefit" label={t('field.benefit')} icon={TrendingUp} error={errors.benefit?.message}>
-            {(c) => (
-              <Textarea
-                {...c}
-                {...register('benefit')}
-                rows={2}
-                maxLength={1000}
-                placeholder={t('feature.benefitPlaceholder')}
-              />
-            )}
+            {(c) => <Textarea {...c} {...register('benefit')} rows={2} placeholder={t('feature.benefitPlaceholder')} />}
           </Field>
         </div>
       </Section>
 
       <Section
-        id="media"
+        id="feature-media-section"
         icon={Clapperboard}
         title={
           <span className="flex items-center gap-2">
@@ -291,15 +269,9 @@ export function FeatureForm({ projects, feature, defaultProjectKey, onSubmit, on
         )}
       </Section>
 
-      <Section id="other" icon={SlidersHorizontal} title={t('form.other')}>
+      <Section id="feature-other" icon={SlidersHorizontal} title={t('form.other')}>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field
-            id="feature-requester"
-            label={t('field.requester')}
-            icon={User}
-            error={errors.requester?.message}
-            required
-          >
+          <Field id="feature-requester" label={t('field.requester')} icon={User} error={errors.requester?.message}>
             {(c) => (
               <Controller
                 control={control}
@@ -339,7 +311,13 @@ export function FeatureForm({ projects, feature, defaultProjectKey, onSubmit, on
         </div>
       </Section>
 
-      <div className="bg-card/95 sticky bottom-0 z-10 -mx-4 -mb-4 flex justify-end gap-2 border-t px-4 py-3 backdrop-blur sm:-mx-6 sm:-mb-6 sm:px-6 xl:-mx-8 xl:px-8">
+      <div
+        className={cn(
+          'bg-card/95 sticky bottom-0 z-10 flex justify-end gap-2 border-t py-3 backdrop-blur',
+          // trong modal: bám đúng lề p-6 của DialogContent; trên trang: bám lề của layout
+          inDialog ? '-mx-6 -mb-6 rounded-b-xl px-6' : '-mx-4 -mb-4 px-4 sm:-mx-6 sm:-mb-6 sm:px-6 xl:-mx-8 xl:px-8',
+        )}
+      >
         <Button type="button" variant="outline" onClick={onCancel}>
           {t('action.cancel')}
         </Button>

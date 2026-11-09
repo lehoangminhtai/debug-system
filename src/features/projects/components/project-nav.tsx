@@ -1,4 +1,4 @@
-import { Bug, Layers, Lightbulb, Plus } from 'lucide-react'
+import { Layers, Plus } from 'lucide-react'
 import { Suspense, lazy, useState, type ReactNode } from 'react'
 import { NavLink, useLocation, useMatch, useSearchParams } from 'react-router-dom'
 import { Hint } from '@/components/common/hint'
@@ -6,8 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
-import { useFeatures, useProjects } from '@/services/queries'
-import type { Project } from '@/types'
+import { useProjects } from '@/services/queries'
 
 // Dialog (zod + react-hook-form) chỉ tải khi người dùng bấm "Dự án mới"
 const NewProjectDialog = lazy(() => import('./new-project-dialog').then((m) => ({ default: m.NewProjectDialog })))
@@ -63,72 +62,6 @@ function Label({ collapsed, children }: { collapsed: boolean; children: ReactNod
   return <span className={collapsed ? 'sr-only' : 'truncate'}>{children}</span>
 }
 
-/** Mục con của phạm vi đang mở: Bug | Tính năng mong muốn (spec feature §6) */
-function SubNav({
-  base,
-  bugCount,
-  featureCount,
-  inFeatures,
-  collapsed,
-  onNavigate,
-}: {
-  base: string
-  bugCount: number
-  featureCount: number
-  inFeatures: boolean
-  collapsed: boolean
-  onNavigate?: () => void
-}) {
-  const { t } = useI18n()
-  const sub = (active: boolean) =>
-    cn(
-      itemClass(false, collapsed),
-      !collapsed && 'gap-1.5 text-[13px]',
-      active && 'bg-accent text-foreground font-semibold',
-    )
-  const items = [
-    {
-      to: base,
-      icon: Bug,
-      label: t('nav.bugs'),
-      active: !inFeatures,
-      n: bugCount,
-      count: t('nav.mustFixCount', { n: bugCount }),
-      tone: 'destructive' as const,
-    },
-    {
-      to: `${base}/features`,
-      icon: Lightbulb,
-      label: t('nav.features'),
-      active: inFeatures,
-      n: featureCount,
-      count: t('nav.newFeatureCount', { n: featureCount }),
-      tone: 'info' as const,
-    },
-  ]
-  return (
-    <ul className={cn('flex flex-col gap-0.5', collapsed ? 'my-0.5' : 'border-border my-0.5 ml-2 border-l pl-1')}>
-      {items.map((i) => (
-        <li key={i.to}>
-          <Hint label={i.n ? `${i.label} · ${i.count}` : i.label} side="right" disabled={!collapsed}>
-            <NavLink
-              to={i.to}
-              end
-              className={sub(i.active)}
-              onClick={onNavigate}
-              aria-current={i.active ? 'page' : undefined}
-            >
-              <i.icon className="size-4 shrink-0" aria-hidden />
-              <Label collapsed={collapsed}>{i.label}</Label>
-              <CountBadge n={i.n} label={i.count} collapsed={collapsed} tone={i.tone} />
-            </NavLink>
-          </Hint>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
 export function ProjectNav({ onNavigate, collapsed = false }: { onNavigate?: () => void; collapsed?: boolean }) {
   const { t } = useI18n()
   const projects = useProjects()
@@ -136,14 +69,6 @@ export function ProjectNav({ onNavigate, collapsed = false }: { onNavigate?: () 
   const [dialogMounted, setDialogMounted] = useState(false)
 
   const totalBlocking = (projects.data ?? []).reduce((a, p) => a + p.mustFixOpen, 0)
-  // Project@index chưa có newFeatureCount (backend chưa cập nhật) → tự đếm đề xuất `new` từ Feature@index
-  const needCount = !!projects.data?.some((p) => typeof p.newFeatureCount !== 'number')
-  const features = useFeatures(undefined, needCount)
-  const newFeatures = (p: Project) =>
-    typeof p.newFeatureCount === 'number'
-      ? p.newFeatureCount
-      : (features.data ?? []).filter((f) => f.projectId === p.id && f.status === 'new').length
-  const totalNewFeatures = (projects.data ?? []).reduce((a, p) => a + newFeatures(p), 0)
   const countLabel = (n: number) => t('nav.mustFixCount', { n })
   const tip = (name: string, n: number) => (n ? `${name} · ${countLabel(n)}` : name)
 
@@ -152,21 +77,12 @@ export function ProjectNav({ onNavigate, collapsed = false }: { onNavigate?: () 
   const [params] = useSearchParams()
   const kind = itemMatch?.params.kind
   const code = kind === 'bugs' || kind === 'features' ? itemMatch?.params.code : undefined
-  const contextKey = code === 'new' ? params.get('project') : code?.split('-')[0]
+
   // className dạng chuỗi (không dùng hàm của NavLink): Slot của Tooltip nối className và làm hỏng dạng hàm
   const { pathname } = useLocation()
   const under = (path: string) => pathname === path || pathname.startsWith(`${path}/`)
-  const inFeatures = kind === 'features' || /^\/[^/]+\/features(\/|$)/.test(pathname)
-  const subNav = (base: string, bugCount: number, featureCount: number) => (
-    <SubNav
-      base={base}
-      bugCount={bugCount}
-      featureCount={featureCount}
-      inFeatures={inFeatures}
-      collapsed={collapsed}
-      onNavigate={onNavigate}
-    />
-  )
+  // /new?project=FF, /bugs/FF-001, /features/FF-F001 vẫn đánh dấu dự án đang làm việc
+  const contextKey = pathname === '/new' || code === 'new' ? params.get('project') : code?.split('-')[0]
 
   return (
     <nav aria-label={t('nav.main')} className="flex flex-col gap-0.5">
@@ -195,7 +111,6 @@ export function ProjectNav({ onNavigate, collapsed = false }: { onNavigate?: () 
           <CountBadge n={totalBlocking} label={countLabel(totalBlocking)} collapsed={collapsed} />
         </NavLink>
       </Hint>
-      {under('/all') && subNav('/all', totalBlocking, totalNewFeatures)}
 
       {collapsed ? (
         <>
@@ -246,7 +161,6 @@ export function ProjectNav({ onNavigate, collapsed = false }: { onNavigate?: () 
                     <CountBadge n={n} label={countLabel(n)} collapsed={collapsed} />
                   </NavLink>
                 </Hint>
-                {active && subNav(`/${p.key}`, n, newFeatures(p))}
               </li>
             )
           })}

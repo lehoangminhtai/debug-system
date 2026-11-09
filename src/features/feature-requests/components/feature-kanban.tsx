@@ -87,7 +87,7 @@ function KanbanCard({
         draggable={false}
         className="focus-visible:after:ring-ring line-clamp-2 text-sm font-medium break-words after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:rounded-lg focus-visible:after:ring-2"
       >
-        {f.title}
+        {f.title || t('common.untitled')}
       </Link>
       <div className="flex flex-wrap items-center gap-1.5">
         <PlatformBadge platform={f.platform} />

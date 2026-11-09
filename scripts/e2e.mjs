@@ -1,4 +1,4 @@
-// Kiểm thử E2E trên bản build: npm run build && npm run e2e
+// Kiểm thử E2E trên bản build staging: npm run build:stg && npm run e2e
 // Dùng Chrome cài trên máy (PW_CHANNEL=chromium nếu đã `npx playwright install chromium`).
 import { mkdirSync } from 'node:fs'
 import { startPreview } from './preview-server.mjs'

@@ -13,11 +13,15 @@ import type {
 } from '../types/index.ts'
 import { createPersistedStore } from '../lib/persisted-store.ts'
 
-// Máy chủ lấy từ .env (build) / .env.deploy (build:deploy) — xem README "Deploy"
-// Ảnh luôn nằm trên máy chủ thật, kể cả khi dev chạy API ở localhost
-const ORIGIN: string = import.meta.env.VITE_ORIGIN
-// `npm run dev` → backend local; build → <VITE_ORIGIN><VITE_BASE>backend/ (vd. http://192.168.110.7/dts/backend/)
-const API_BASE = import.meta.env.DEV ? 'http://localhost/dts/backend/' : `${ORIGIN}${import.meta.env.BASE_URL}backend/`
+// URL backend theo môi trường (.env.development / .env.staging / .env.production — xem README "Môi trường").
+// Staging/production: đường dẫn TƯƠNG ĐỐI ('/dts/backend/') → tự cùng giao thức + host với trang,
+// chạy được cả http lẫn https. URL tuyệt đối (local) bị ép theo giao thức của trang để trang https
+// không bao giờ gọi API http (mixed content) — giống App VCM.
+const RAW_API_BASE: string = import.meta.env.VITE_API_BASE_URL
+const API_BASE = RAW_API_BASE.replace(/^https?:\/\//, `${window.location.protocol}//`)
+
+/** Host thật của backend — cũng là nơi phục vụ thư mục upload (ảnh/video). */
+const FILE_ORIGIN = new URL(API_BASE, window.location.href).origin
 
 /** `code` lấy từ backend (not_found, duplicate_key, invalid_key, invalid_credentials...) hoặc nội bộ (network, session_expired, generic) */
 export class ApiError extends Error {
@@ -76,10 +80,12 @@ export async function login(username: string, password: string, otp?: string) {
   tokenStore.set(json.accessToken)
 }
 
-// Ảnh backend trả đường dẫn tương đối ('/web_develop/dts/upload/...'): thêm origin để <img> chạy được cả khi dev (trỏ về máy chủ thật).
-// Khi gửi lại (sửa bug) phải trả về đúng nguyên văn nên cắt origin đi.
-const imgIn = (url: string) => (url.startsWith('/') ? ORIGIN + url : url)
-const imgOut = (url: string) => (url.startsWith(ORIGIN + '/') ? url.slice(ORIGIN.length) : url)
+// Backend trả link file dạng tương đối theo môi trường ('/dts/upload/...' ở production,
+// '/web_develop/dts/upload/...' ở staging): ghép FILE_ORIGIN để <img>/<video> chạy được cả khi dev
+// (backend ở host khác). Khi gửi lại (sửa bug) phải trả về đúng nguyên văn nên cắt origin đi —
+// không dùng độ dài cứng, vì http:// và https:// dài khác nhau.
+const imgIn = (url: string) => (url.startsWith('/') ? FILE_ORIGIN + url : url)
+const imgOut = (url: string) => (url.startsWith(FILE_ORIGIN + '/') ? url.slice(FILE_ORIGIN.length) : url)
 
 /** `platforms` (mảng) hoặc `platform` (chuỗi/mảng) của backend cũ → mảng; giá trị cũ 'window' → 'windows' */
 const platformsIn = (v: Platform | Platform[]) =>
@@ -91,16 +97,32 @@ const bugIn = (b: Bug & { platforms?: Platform[] }): Bug => {
   return {
     ...rest,
     platform: platformsIn(platforms ?? rest.platform),
-    images: b.images.map((i) => ({ ...i, url: imgIn(i.url) })),
+    images: b.images.map((i) => ({ ...i, type: i.type ?? 'image', size: i.size ?? 0, url: imgIn(i.url) })),
     history: b.history.map((h) => ({ ...h, target: h.target ?? undefined })),
   }
 }
 
-const bugOut = <T extends { platform: Platform[]; images: { url: string }[] }>({ platform, ...input }: T) => ({
-  ...input,
-  platforms: platform,
-  images: input.images.map((i) => ({ ...i, url: imgOut(i.url) })),
-})
+/**
+ * multipart/form-data cho Bug@store/update: file mới (ảnh/video) gửi nguyên Blob, file cũ gửi lại `url`.
+ * Không gửi data URL nữa (video quá lớn để base64 trong JSON).
+ */
+function bugForm(
+  { platform, images, isCore, ...fields }: Partial<BugInput> & Omit<BugInput, 'projectId'>,
+  otp: string,
+) {
+  const fd = new FormData()
+  for (const [k, v] of Object.entries(fields)) if (v !== undefined) fd.append(k, v === null ? '' : String(v))
+  if (isCore !== undefined) fd.append('isCore', isCore ? '1' : '0') // Laravel `boolean` không nhận chuỗi "true"
+  for (const p of platform) fd.append('platforms[]', p)
+  if (images.length === 0) fd.append('images', '') // rỗng = xoá hết
+  images.forEach((m, i) => {
+    if ('file' in m) fd.append(`images[${i}][file]`, m.file, m.name)
+    else fd.append(`images[${i}][url]`, imgOut(m.url))
+    fd.append(`images[${i}][caption]`, m.caption)
+  })
+  fd.append('otp', otp)
+  return fd
+}
 
 // Giống bug: backend dùng `platforms` (mảng), FE giữ tên `platform`; nhận cả `platform` chuỗi từ backend cũ
 const featureIn = ({ platforms, ...f }: Feature & { platforms?: Platform[] }): Feature => ({
@@ -195,11 +217,11 @@ export const api = {
   getBug: async (code: string) => bugIn(await data(request<{ data: Bug }>('Bug', 'show', { query: { code } }))),
 
   createBug: async (input: BugInput, otp: string) =>
-    bugIn((await post('Bug', 'store', undefined, { ...bugOut(input), otp })).data),
+    bugIn((await post('Bug', 'store', undefined, bugForm(input, otp))).data),
 
   /** Sửa nội dung bug. Dự án, trạng thái và lịch sử không đổi qua đây. */
   updateBug: async (code: string, input: Omit<BugInput, 'projectId'>, otp: string) =>
-    bugIn((await post('Bug', 'update', { code }, { ...bugOut(input), otp })).data),
+    bugIn((await post('Bug', 'update', { code }, bugForm(input, otp))).data),
 
   changeStatus: async (code: string, status: Status) =>
     bugIn((await post('Bug', 'changeStatus', { code }, { status })).data),
@@ -258,7 +280,8 @@ export const api = {
       ),
     ),
 
-  deleteFeature: async (code: string, otp: string) => {
-    await request('Feature', 'destroy', { method: 'POST', query: { code }, body: { otp } })
+  /** `confirm`: người dùng tự gõ lại mã đề xuất (backend kiểm, sai → confirm_mismatch) */
+  deleteFeature: async (code: string, confirm: string, otp: string) => {
+    await request('Feature', 'destroy', { method: 'POST', query: { code }, body: { confirm, otp } })
   },
 }

@@ -1,4 +1,4 @@
-import { ShieldAlert, Target, type LucideIcon } from 'lucide-react'
+import { Bug as BugIcon, Lightbulb, ShieldAlert, Target, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useI18n } from '@/i18n'
 import {
@@ -104,6 +104,20 @@ export function FeatureStatusBadge({ status }: { status: FeatureStatus }) {
   return (
     <Pill tone={m.tone} icon={m.icon}>
       {t(`featureStatus.${status}`)}
+    </Pill>
+  )
+}
+
+/** Loại mục trong bảng gộp: Bug (đỏ) | Tính năng mong muốn (xanh) */
+export function TypeBadge({ kind }: { kind: 'bug' | 'feature' }) {
+  const { t } = useI18n()
+  return kind === 'bug' ? (
+    <Pill tone="destructive" icon={BugIcon}>
+      {t('type.bug')}
+    </Pill>
+  ) : (
+    <Pill tone="info" icon={Lightbulb}>
+      {t('type.feature')}
     </Pill>
   )
 }

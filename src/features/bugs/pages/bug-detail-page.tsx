@@ -41,7 +41,7 @@ import { ApiError } from '@/services/api'
 import { useAssign, useBug, useChangeStatus, useDeleteBug, usePeople, useProjects } from '@/services/queries'
 import { STATUSES, type Bug, type Status } from '@/types'
 import { HistoryList } from '../components/history-list'
-import { ImageGallery } from '../components/image-gallery'
+import { MediaGallery } from '@/components/common/media-gallery'
 import { StatusStepper } from '../components/status-stepper'
 import { FROM_LIST } from '../hooks/use-scope'
 
@@ -68,7 +68,9 @@ function IconLabel({ icon: Icon, children }: { icon: LucideIcon; children: React
   )
 }
 
+/** Ô bỏ trống khi báo (không còn bắt buộc) → hiện "—" */
 function TextBlock({ text }: { text: string }) {
+  if (!text.trim()) return <p className="text-muted-foreground text-sm">—</p>
   return <p className="text-sm break-words whitespace-pre-wrap">{text}</p>
 }
 
@@ -180,7 +182,7 @@ export function BugDetailPage() {
         </div>
         {/* Tên bug bên trái, các trạng thái bên phải */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <h1 className="min-w-0 text-xl font-semibold break-words">{bug.title}</h1>
+          <h1 className="min-w-0 text-xl font-semibold break-words">{bug.title || t('common.untitled')}</h1>
           <div className="flex flex-wrap items-center gap-1.5 sm:max-w-[50%] sm:shrink-0 sm:justify-end sm:pt-1">
             <StatusBadge status={bug.status} />
             <SeverityBadge severity={bug.severity} />
@@ -228,6 +230,7 @@ export function BugDetailPage() {
         {/* Nội dung tái tạo */}
         <div className="flex flex-col gap-5">
           <Section id="steps" icon={ListOrdered} title={t('field.steps')}>
+            {steps.length === 0 && <TextBlock text="" />}
             <ol className="flex flex-col gap-2">
               {steps.map((s, i) => (
                 <li key={i} className="flex gap-3 text-sm">
@@ -261,7 +264,7 @@ export function BugDetailPage() {
 
           <Section id="images" icon={Image} title={t('field.images')}>
             {bug.images.length ? (
-              <ImageGallery images={bug.images} />
+              <MediaGallery media={bug.images} />
             ) : (
               <p className="text-muted-foreground text-sm">{t('detail.noImages')}</p>
             )}

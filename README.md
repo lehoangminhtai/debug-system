@@ -8,41 +8,37 @@ Ghi lại bug theo dự án (Backend / Frontend / Mobile) kèm bước tái tạ
 
 ```bash
 npm install
-npm run dev          # http://localhost:5173/web_develop/dts/#/all
+npm run dev          # http://localhost:5173/dts/#/all  (backend XAMPP local)
 ```
 
 | Lệnh | Việc |
 |---|---|
-| `npm run build` | Typecheck + build vào `dist/` cho máy chủ **192.168.110.2/web_develop/dts** |
-| `npm run build:deploy` | Typecheck + build vào `dist-deploy/` cho máy chủ **192.168.110.7/dts** |
+| `npm run dev` | **Local**: Vite dev server, gọi backend XAMPP `http://localhost/dts/backend/` (`.env.development`) |
+| `npm run build:stg` | **Staging**: typecheck + build vào `dist-staging/` cho **192.168.110.2/web_develop/dts** (`.env.staging`) |
+| `npm run build` / `build:prod` | **Production**: typecheck + build vào `dist/` cho **192.168.110.7/dts** (`.env.production`) |
 | `npm run typecheck` | TypeScript |
 | `npm run lint` | ESLint |
 | `npm test` | Test quy tắc nghiệp vụ (bắt buộc sửa, mã bug, release) |
-| `npm run e2e` | E2E Playwright trên bản build (cần `npm run build` trước; dùng Chrome đã cài, hoặc `PW_CHANNEL=chromium` sau `npx playwright install chromium`). Ảnh chụp lưu ở `e2e-results/` |
+| `npm run e2e` | E2E Playwright trên bản build staging (cần `npm run build:stg` trước; dùng Chrome đã cài, hoặc `PW_CHANNEL=chromium` sau `npx playwright install chromium`). Ảnh chụp lưu ở `e2e-results/` |
 | `npm run audit` | Audit UI/UX trên bản build: 8 viewport × 8 route — tràn ngang, vùng chạm (WCAG 2.5.8), heading, axe-core WCAG 2.2 AA, lỗi console. Kết quả + ảnh ở `audit-results/` |
 | `npm run format` | Prettier |
 
-## Deploy
+## Môi trường
 
-Có 2 máy chủ, mỗi máy một lệnh build, ra 2 thư mục riêng nên không ghi đè nhau.
+3 môi trường, giống App VCM. Mỗi môi trường một file `.env.<mode>`; file `.env` trơn cố ý để trống (Vite nạp nó ở mọi mode).
 
-| Máy chủ | Lệnh | Địa chỉ mở app | Chép thư mục build vào | Backend FE gọi tới | File cấu hình |
+| Môi trường | Lệnh | File cấu hình | Địa chỉ mở app | Chép build vào | API (`VITE_API_BASE_URL`) |
 |---|---|---|---|---|---|
-| 192.168.110.2 | `npm run build` | `http://192.168.110.2/web_develop/dts/` | `dist/` → thư mục `web_develop/dts/` | `http://192.168.110.2/web_develop/dts/backend/` | `.env` |
-| 192.168.110.7 | `npm run build:deploy` | `http://192.168.110.7/dts/` | `dist-deploy/` → thư mục `dts/` | `http://192.168.110.7/dts/backend/` | `.env.deploy` |
+| **Local** | `npm run dev` | `.env.development` | `http://localhost:5173/dts/` | (không build) | `http://localhost/dts/backend/` (XAMPP) |
+| **Staging** | `npm run build:stg` | `.env.staging` | `http(s)://192.168.110.2/web_develop/dts/` | `dist-staging/` → `Z:\web\dts` | `/web_develop/dts/backend/` |
+| **Production** | `npm run build` | `.env.production` | `http(s)://192.168.110.7/dts/` | `dist/` → `dts/` trên 192.168.110.7 | `/dts/backend/` |
 
-- Chép **nội dung** của thư mục build (gồm `index.html` và thư mục `assets/`) vào thư mục tương ứng; backend nằm sẵn ở thư mục con `backend/` bên cạnh.
+- **Http và https:** staging/production gọi API bằng đường dẫn **tương đối**, nên tự cùng giao thức với trang. URL tuyệt đối (local) bị ép theo `window.location.protocol` (`src/services/api.ts`). Không viết cứng `http://` ở đâu cả: xem `FRONTEND-AGENT-HTTPS.md`.
+- **Link ảnh/video:** backend trả đường dẫn tương đối theo môi trường (`/dts/upload/…` ở production, `/web_develop/dts/upload/…` ở staging). FE ghép origin của backend (`FILE_ORIGIN`) để hiển thị, và cắt đi khi gửi lại lúc sửa bug.
+- Chép **nội dung** của thư mục build (`index.html` + `assets/`); backend nằm sẵn ở thư mục con `backend/` bên cạnh, file upload ở `upload/`.
 - Route dùng hash (`/dts/#/FF/board`) nên không cần cấu hình rewrite trên web server.
-- Mỗi file `.env*` có 2 biến:
-
-  | Biến | Ý nghĩa | `.env` | `.env.deploy` |
-  |---|---|---|---|
-  | `VITE_ORIGIN` | Host của máy chủ (backend, ảnh/video upload) | `http://192.168.110.2` | `http://192.168.110.7` |
-  | `VITE_BASE` | Thư mục chứa app trên host (`base` của Vite). Backend = `VITE_ORIGIN` + `VITE_BASE` + `backend/` | `/web_develop/dts/` | `/dts/` |
-
-- Thêm máy chủ khác: tạo `.env.<tên>` với 2 biến trên, thêm script `"build:<tên>": "tsc -b && vite build --mode <tên> --outDir dist-<tên>"` vào `package.json` (và `dist-<tên>` vào `.gitignore`).
-- `npm run dev` luôn gọi backend ở `http://localhost/dts/backend/`; ảnh lấy từ `VITE_ORIGIN` trong `.env`.
-- `npm run e2e` / `npm run audit` chạy trên bản `npm run build` (đường dẫn `/web_develop/dts/`), không chạy trên bản `build:deploy`.
+- **Dev với backend staging thay cho XAMPP:** bật 3 dòng comment trong `.env.development` (`VITE_PROXY_TARGET`). Phải đi qua proxy của Vite vì nginx trên NAS chặn preflight `OPTIONS` (405).
+- `npm run e2e` / `npm run audit` chạy trên bản `npm run build:stg` (đường dẫn `/web_develop/dts/`).
 
 ## Quy tắc nghiệp vụ
 

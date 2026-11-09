@@ -48,7 +48,7 @@ import {
   useProjects,
 } from '@/services/queries'
 import { FEATURE_STATUSES, type FeatureStatus } from '@/types'
-import { MediaGallery } from '../components/media-gallery'
+import { MediaGallery } from '@/components/common/media-gallery'
 import { RejectDialog } from '../components/reject-dialog'
 
 const UNASSIGNED = '__none'
@@ -77,7 +77,13 @@ function IconLabel({ icon: Icon, children }: { icon: LucideIcon; children: React
   )
 }
 
-const TextBlock = ({ text }: { text: string }) => <p className="text-sm break-words whitespace-pre-wrap">{text}</p>
+/** Ô bỏ trống khi đề xuất (không còn bắt buộc) → hiện "—" */
+const TextBlock = ({ text }: { text: string }) =>
+  text.trim() ? (
+    <p className="text-sm break-words whitespace-pre-wrap">{text}</p>
+  ) : (
+    <p className="text-muted-foreground text-sm">—</p>
+  )
 
 function DetailSkeleton() {
   const { t } = useI18n()
@@ -117,7 +123,7 @@ export function FeatureDetailPage() {
 
   const f = feature!
   const project = projects.data?.find((p) => p.id === f.projectId)
-  const listUrl = `/${project?.key ?? 'all'}/features`
+  const listUrl = `/${project?.key ?? 'all'}?type=feature`
   const goBack = () => ((location.state as typeof FROM_LIST | null)?.fromList ? navigate(-1) : navigate(listUrl))
   const busy = changeStatus.isPending || assign.isPending
 
@@ -165,7 +171,7 @@ export function FeatureDetailPage() {
           />
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <h1 className="min-w-0 text-xl font-semibold break-words">{f.title}</h1>
+          <h1 className="min-w-0 text-xl font-semibold break-words">{f.title || t('common.untitled')}</h1>
           <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0 sm:justify-end sm:pt-1">
             <FeatureStatusBadge status={f.status} />
             <PriorityBadge priority={f.priority} />
@@ -197,8 +203,9 @@ export function FeatureDetailPage() {
             title={t('feature.deleteTitle', { code: f.code })}
             description={t('feature.deleteDesc', { code: f.code })}
             confirmLabel={t('action.deleteFeature')}
-            onConfirm={(otp) =>
-              del.mutateAsync({ code: f.code, otp }).then(() => {
+            confirmCode={f.code}
+            onConfirm={(otp, confirm) =>
+              del.mutateAsync({ code: f.code, confirm, otp }).then(() => {
                 toast.success(t('toast.bugDeleted', { code: f.code }))
                 navigate(listUrl, { replace: true })
               })

@@ -3,10 +3,10 @@ import { spawn } from 'node:child_process'
 import { chromium } from 'playwright'
 
 export async function startPreview(port) {
-  const base = `http://localhost:${port}/web_develop/dts` // khớp `base` trong vite.config.ts
+  const base = `http://localhost:${port}/web_develop/dts` // bản staging: npm run build:stg (base /web_develop/dts/)
   const server = spawn(
     process.execPath,
-    ['node_modules/vite/bin/vite.js', 'preview', '--port', String(port), '--strictPort'],
+    ['node_modules/vite/bin/vite.js', 'preview', '--mode', 'staging', '--outDir', 'dist-staging', '--port', String(port), '--strictPort'],
     {
       stdio: 'ignore',
     },
