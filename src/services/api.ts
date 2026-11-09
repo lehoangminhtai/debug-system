@@ -10,6 +10,7 @@ import type {
   ProjectInput,
   Severity,
   Status,
+  UploadFile,
 } from '../types/index.ts'
 import { createPersistedStore } from '../lib/persisted-store.ts'
 
@@ -80,12 +81,18 @@ export async function login(username: string, password: string, otp?: string) {
   tokenStore.set(json.accessToken)
 }
 
-// Backend trả link file dạng tương đối theo môi trường ('/dts/upload/...' ở production,
+// Trong `content`, backend trả link file dạng tương đối theo môi trường ('/dts/upload/...' ở production,
 // '/web_develop/dts/upload/...' ở staging): ghép FILE_ORIGIN để <img>/<video> chạy được cả khi dev
-// (backend ở host khác). Khi gửi lại (sửa bug) phải trả về đúng nguyên văn nên cắt origin đi —
-// không dùng độ dài cứng, vì http:// và https:// dài khác nhau.
-const imgIn = (url: string) => (url.startsWith('/') ? FILE_ORIGIN + url : url)
-const imgOut = (url: string) => (url.startsWith(FILE_ORIGIN + '/') ? url.slice(FILE_ORIGIN.length) : url)
+// (backend ở host khác). Khi gửi lại (sửa) phải trả về đúng nguyên văn nên cắt origin đi.
+// `="/x` nhưng không phải `="//host` (URL không giao thức).
+const contentIn = (html: string | null | undefined) => (html ?? '').replace(/\b(src|href)="\/(?!\/)/g, `$1="${FILE_ORIGIN}/`)
+const contentOut = (html: string) => html.replaceAll(`="${FILE_ORIGIN}/`, '="/')
+
+/** `content` (HTML, file mới là `upload:N`) + `files[N]` */
+function appendContent(fd: FormData, content: string, files: UploadFile[]) {
+  fd.append('content', contentOut(content))
+  files.forEach((f, i) => fd.append(`files[${i}]`, f.blob, f.name))
+}
 
 /** `platforms` (mảng) hoặc `platform` (chuỗi/mảng) của backend cũ → mảng; giá trị cũ 'window' → 'windows' */
 const platformsIn = (v: Platform | Platform[]) =>
@@ -97,29 +104,21 @@ const bugIn = (b: Bug & { platforms?: Platform[] }): Bug => {
   return {
     ...rest,
     platform: platformsIn(platforms ?? rest.platform),
-    images: b.images.map((i) => ({ ...i, type: i.type ?? 'image', size: i.size ?? 0, url: imgIn(i.url) })),
+    content: contentIn(b.content),
     history: b.history.map((h) => ({ ...h, target: h.target ?? undefined })),
   }
 }
 
-/**
- * multipart/form-data cho Bug@store/update: file mới (ảnh/video) gửi nguyên Blob, file cũ gửi lại `url`.
- * Không gửi data URL nữa (video quá lớn để base64 trong JSON).
- */
+/** multipart/form-data cho Bug@store/update: nội dung rich text + file mới gửi nguyên Blob */
 function bugForm(
-  { platform, images, isCore, ...fields }: Partial<BugInput> & Omit<BugInput, 'projectId'>,
+  { platform, isCore, content, files, ...fields }: Partial<BugInput> & Omit<BugInput, 'projectId'>,
   otp: string,
 ) {
   const fd = new FormData()
   for (const [k, v] of Object.entries(fields)) if (v !== undefined) fd.append(k, v === null ? '' : String(v))
   if (isCore !== undefined) fd.append('isCore', isCore ? '1' : '0') // Laravel `boolean` không nhận chuỗi "true"
   for (const p of platform) fd.append('platforms[]', p)
-  if (images.length === 0) fd.append('images', '') // rỗng = xoá hết
-  images.forEach((m, i) => {
-    if ('file' in m) fd.append(`images[${i}][file]`, m.file, m.name)
-    else fd.append(`images[${i}][url]`, imgOut(m.url))
-    fd.append(`images[${i}][caption]`, m.caption)
-  })
+  appendContent(fd, content, files)
   fd.append('otp', otp)
   return fd
 }
@@ -128,21 +127,16 @@ function bugForm(
 const featureIn = ({ platforms, ...f }: Feature & { platforms?: Platform[] }): Feature => ({
   ...f,
   platform: platformsIn(platforms ?? f.platform),
-  media: f.media.map((m) => ({ ...m, url: imgIn(m.url) })),
+  content: contentIn(f.content),
   history: f.history.map((h) => ({ ...h, target: h.target ?? undefined })),
 })
 
 /** multipart/form-data cho Feature@store/update (doc feature-request-api §12) */
-function featureForm({ media, platform, ...fields }: FeatureInput, otp: string) {
+function featureForm({ platform, content, files, ...fields }: FeatureInput, otp: string) {
   const fd = new FormData()
   for (const [k, v] of Object.entries(fields)) if (v !== undefined) fd.append(k, v === null ? '' : String(v))
   for (const p of platform) fd.append('platforms[]', p) // PHP đọc thành mảng $_POST['platforms']
-  if (media.length === 0) fd.append('media', '') // rỗng = xoá hết
-  media.forEach((m, i) => {
-    if ('id' in m) fd.append(`media[${i}][id]`, String(m.id))
-    else fd.append(`media[${i}][file]`, m.file, m.name)
-    fd.append(`media[${i}][caption]`, m.caption)
-  })
+  appendContent(fd, content, files)
   fd.append('otp', otp)
   return fd
 }

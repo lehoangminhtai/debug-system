@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { MediaValue } from '@/lib/media'
+import { extractUploads } from '@/lib/pending-files'
 import { PLATFORMS, SEVERITIES, type BugInput } from '@/types'
 
 export const UNASSIGNED = '__none'
@@ -14,14 +14,10 @@ export const schema = z.object({
   platform: z.array(z.enum(PLATFORMS)),
   isCore: z.enum(['yes', 'no']).nullish(),
   severity: z.enum(SEVERITIES).nullish(),
-  steps: z.array(z.object({ value: text() })),
-  expected: text(),
-  actual: text(),
-  note: text(),
+  // Rich text HTML: bước tái tạo, kết quả, ảnh/video/tệp (file mới là blob: URL tới lúc lưu)
+  content: text(),
   reporter: z.string(),
   assignee: z.string(),
-  // Ảnh + video, không giới hạn số lượng / dung lượng
-  images: z.array(z.custom<MediaValue>()),
 })
 export type BugFormValues = z.infer<typeof schema>
 
@@ -33,19 +29,8 @@ export function toBugInput(v: BugFormValues): BugInput {
     // chưa chọn → không gửi, backend mặc định (không cốt lõi, Trung bình)
     isCore: v.isCore ? v.isCore === 'yes' : undefined,
     severity: v.severity ?? undefined,
-    steps: v.steps
-      .map((s) => s.value.trim())
-      .filter(Boolean)
-      .join('\n'),
-    expected: v.expected.trim(),
-    actual: v.actual.trim(),
-    note: v.note.trim(),
+    ...extractUploads(v.content),
     reporter: v.reporter,
     assignee: v.assignee === UNASSIGNED ? null : v.assignee,
-    images: v.images.map((m) =>
-      m.file
-        ? { file: m.file, name: m.name ?? 'file', caption: m.caption.trim() }
-        : { url: m.url, caption: m.caption.trim() },
-    ),
   }
 }

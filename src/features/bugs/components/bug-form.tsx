@@ -1,37 +1,30 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
-  CircleCheck,
-  CircleX,
   Clock,
   Flame,
   FolderKanban,
   MonitorSmartphone,
-  StickyNote,
   Type,
   User,
   Wrench,
   FileText,
-  Image as ImageIcon,
   ListOrdered,
   Loader2,
   CircleOff,
-  Plus,
   ShieldAlert,
   SlidersHorizontal,
   Tags,
   Target,
-  X,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import { Field, FieldSet } from '@/components/common/field'
 import { RadioCard } from '@/components/common/radio-card'
-import { Hint } from '@/components/common/hint'
+import { RichEditor } from '@/components/common/rich-text'
 import { Section } from '@/components/common/section'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import { useUnsavedChangesGuard } from '@/hooks/use-unsaved-changes'
 import { useI18n } from '@/i18n'
 import { PLATFORM_ICON, PLATFORM_TONE, SEVERITY_META } from '@/lib/meta'
@@ -41,7 +34,6 @@ import { PersonSelect } from '@/components/common/person-select'
 import { useMe, usePeople } from '@/services/queries'
 import { PLATFORMS, SEVERITIES, type Bug, type Project } from '@/types'
 import { UNASSIGNED, schema, type BugFormValues } from '../bug-form-schema'
-import { MediaField } from '@/components/common/media-field'
 
 interface Props {
   projects: Project[]
@@ -81,25 +73,17 @@ export function BugForm({
           platform: bug.platform,
           isCore: bug.isCore ? 'yes' : 'no',
           severity: bug.severity,
-          steps: bug.steps.split('\n').map((value) => ({ value })),
-          expected: bug.expected,
-          actual: bug.actual,
-          note: bug.note,
+          content: bug.content,
           reporter: bug.reporter,
           assignee: bug.assignee ?? UNASSIGNED,
-          images: bug.images.map(({ id, type, url, caption, size }) => ({ id, type, url, caption, size })),
         }
       : {
           projectId: String(projects.find((p) => p.key === defaultProjectKey)?.id ?? ''),
           title: '',
           platform: [],
-          steps: [{ value: '' }, { value: '' }],
-          expected: '',
-          actual: '',
-          note: '',
+          content: '',
           reporter: currentUser,
           assignee: UNASSIGNED,
-          images: [],
         },
   })
   const { register, control, formState } = form
@@ -125,7 +109,6 @@ export function BugForm({
   const isDirty = formState.isDirty
   useEffect(() => onDirtyChange?.(isDirty), [isDirty, onDirtyChange])
   const { errors } = formState
-  const steps = useFieldArray({ control, name: 'steps' })
 
   const [projectId, isCore, severity] = useWatch({ control, name: ['projectId', 'isCore', 'severity'] })
   const project = projects.find((p) => String(p.id) === projectId)
@@ -137,8 +120,6 @@ export function BugForm({
         : severity === 'low'
           ? 'later'
           : 'whenPossible'
-
-  const stepsError = errors.steps?.message ?? errors.steps?.root?.message
 
   return (
     <form onSubmit={form.handleSubmit((values) => setPending(values))} noValidate className="flex flex-col gap-5">
@@ -311,109 +292,32 @@ export function BugForm({
         </div>
       </Section>
 
-      {/* Tái tạo */}
-      <Section id="repro" icon={ListOrdered} title={t('form.repro')} description={t('form.reproDesc')}>
-        <div className="flex flex-col gap-4">
-          <FieldSet id="bug-steps" label={t('field.steps')} icon={ListOrdered} error={stepsError}>
-            {(describedBy) => (
-              <div className="flex flex-col gap-2">
-                <ol className="flex flex-col gap-2">
-                  {steps.fields.map((f, i) => (
-                    <li key={f.id} className="flex items-center gap-2">
-                      <span
-                        aria-hidden
-                        className="bg-muted flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums"
-                      >
-                        {i + 1}
-                      </span>
-                      <Input
-                        {...register(`steps.${i}.value`, {
-                          // lỗi "ít nhất một bước" nằm ở cấp mảng → kiểm tra lại cả mảng khi gõ
-                          onChange: () => stepsError && form.trigger('steps'),
-                        })}
-                        aria-label={t('form.stepPlaceholder', { n: i + 1 })}
-                        aria-describedby={describedBy}
-                        aria-invalid={!!errors.steps?.[i]?.value || (!!stepsError && i === 0) || undefined}
-                        placeholder={t('form.stepPlaceholder', { n: i + 1 })}
-                        onKeyDown={(e) => {
-                          // Enter ở bước cuối → thêm bước mới
-                          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                            e.preventDefault()
-                            if (i === steps.fields.length - 1) steps.append({ value: '' })
-                            else form.setFocus(`steps.${i + 1}.value`)
-                          }
-                        }}
-                      />
-                      <Hint label={t('action.removeStep', { n: i + 1 })}>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="text-muted-foreground shrink-0"
-                          aria-label={t('action.removeStep', { n: i + 1 })}
-                          disabled={steps.fields.length === 1}
-                          onClick={() => steps.remove(i)}
-                        >
-                          <X />
-                        </Button>
-                      </Hint>
-                    </li>
-                  ))}
-                </ol>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="self-start"
-                  onClick={() => steps.append({ value: '' })}
-                >
-                  <Plus aria-hidden />
-                  {t('action.addStep')}
-                </Button>
-              </div>
-            )}
-          </FieldSet>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field id="bug-expected" label={t('field.expected')} icon={CircleCheck} error={errors.expected?.message}>
-              {(c) => (
-                <Textarea {...c} {...register('expected')} rows={3} placeholder={t('form.expectedPlaceholder')} />
-              )}
-            </Field>
-            <Field id="bug-actual" label={t('field.actual')} icon={CircleX} error={errors.actual?.message}>
-              {(c) => <Textarea {...c} {...register('actual')} rows={3} placeholder={t('form.actualPlaceholder')} />}
-            </Field>
-          </div>
-        </div>
-      </Section>
-
-      {/* Ảnh minh chứng */}
+      {/* Nội dung: bước tái tạo, kết quả, ảnh/video/tệp — một ô rich text */}
       <Section
-        id="images"
-        icon={ImageIcon}
-        title={
-          <span className="flex items-center gap-2">
-            {t('field.images')}
-            <span className="bg-muted text-muted-foreground rounded-sm px-1.5 text-xs font-medium">
-              {t('form.recommended')}
-            </span>
-          </span>
-        }
-        description={<span id="bug-images-hint">{t('form.imagesDesc')}</span>}
+        id="bug-content-section"
+        icon={ListOrdered}
+        title={t('field.content')}
+        description={<span id="bug-content-hint">{t('form.contentDesc')}</span>}
       >
         <Controller
           control={control}
-          name="images"
+          name="content"
           render={({ field }) => (
-            <MediaField id="bug-images" value={field.value} onChange={field.onChange} describedBy="bug-images-hint" />
+            <RichEditor
+              id="bug-content"
+              value={field.value}
+              onChange={field.onChange}
+              placeholder={t('form.contentPlaceholder')}
+              labelledBy="bug-content-section-title"
+              describedBy="bug-content-hint"
+            />
           )}
         />
       </Section>
 
       {/* Khác */}
       <Section id="other" icon={SlidersHorizontal} title={t('form.other')}>
-        <div className="flex flex-col gap-4">
-          <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2">
             <Field id="bug-reporter" label={t('field.reporter')} icon={User} error={errors.reporter?.message}>
               {(c) => (
                 <Controller
@@ -451,10 +355,6 @@ export function BugForm({
                 />
               )}
             </Field>
-          </div>
-          <Field id="bug-note" label={t('field.note')} icon={StickyNote} error={errors.note?.message}>
-            {(c) => <Textarea {...c} {...register('note')} rows={3} placeholder={t('form.notePlaceholder')} />}
-          </Field>
         </div>
       </Section>
 
@@ -462,7 +362,7 @@ export function BugForm({
         className={cn(
           'bg-card/95 sticky bottom-0 z-10 flex justify-end gap-2 border-t py-3 backdrop-blur',
           // trong modal: bám đúng lề p-6 của DialogContent; trên trang: bám lề của layout
-          inDialog ? '-mx-6 -mb-6 rounded-b-xl px-6' : '-mx-4 -mb-4 px-4 sm:-mx-6 sm:-mb-6 sm:px-6 xl:-mx-8 xl:px-8',
+          inDialog ? '-mx-6 rounded-b-xl px-6' : '-mx-4 -mb-4 px-4 sm:-mx-6 sm:-mb-6 sm:px-6 xl:-mx-8 xl:px-8',
         )}
       >
         <Button type="button" variant="outline" onClick={onCancel}>

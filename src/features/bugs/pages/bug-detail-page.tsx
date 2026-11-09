@@ -3,18 +3,14 @@ import {
   Activity,
   ArrowLeft,
   Calendar,
-  CircleCheck,
-  CircleX,
   FolderKanban,
   History,
-  Image,
   Info,
   ListOrdered,
   Loader2,
   MonitorSmartphone,
   Pencil,
   RotateCcw,
-  StickyNote,
   Target,
   User,
   Wrench,
@@ -41,7 +37,7 @@ import { ApiError } from '@/services/api'
 import { useAssign, useBug, useChangeStatus, useDeleteBug, usePeople, useProjects } from '@/services/queries'
 import { STATUSES, type Bug, type Status } from '@/types'
 import { HistoryList } from '../components/history-list'
-import { MediaGallery } from '@/components/common/media-gallery'
+import { RichContentView } from '@/components/common/rich-text'
 import { StatusStepper } from '../components/status-stepper'
 import { FROM_LIST } from '../hooks/use-scope'
 
@@ -66,12 +62,6 @@ function IconLabel({ icon: Icon, children }: { icon: LucideIcon; children: React
       {children}
     </span>
   )
-}
-
-/** Ô bỏ trống khi báo (không còn bắt buộc) → hiện "—" */
-function TextBlock({ text }: { text: string }) {
-  if (!text.trim()) return <p className="text-muted-foreground text-sm">—</p>
-  return <p className="text-sm break-words whitespace-pre-wrap">{text}</p>
 }
 
 function DeleteBugButton({ bug, projectKey }: { bug: Bug; projectKey?: string }) {
@@ -157,7 +147,6 @@ export function BugDetailPage() {
     )
   }
 
-  const steps = bug.steps.split('\n').filter((s) => s.trim())
   const handling = mustFix
     ? t('handling.mustFix')
     : bug.severity === 'low'
@@ -229,53 +218,8 @@ export function BugDetailPage() {
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
         {/* Nội dung tái tạo */}
         <div className="flex flex-col gap-5">
-          <Section id="steps" icon={ListOrdered} title={t('field.steps')}>
-            {steps.length === 0 && <TextBlock text="" />}
-            <ol className="flex flex-col gap-2">
-              {steps.map((s, i) => (
-                <li key={i} className="flex gap-3 text-sm">
-                  <span
-                    aria-hidden
-                    className="bg-muted flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums"
-                  >
-                    {i + 1}
-                  </span>
-                  <span className="min-w-0 break-words">{s}</span>
-                </li>
-              ))}
-            </ol>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <div className="border-success/30 bg-success-bg rounded-md border p-3">
-                <h3 className="text-success-text mb-1 flex items-center gap-1.5 text-xs font-semibold">
-                  <CircleCheck className="size-3.5" aria-hidden />
-                  {t('field.expected')}
-                </h3>
-                <TextBlock text={bug.expected} />
-              </div>
-              <div className="border-destructive/30 bg-destructive-bg rounded-md border p-3">
-                <h3 className="text-destructive-text mb-1 flex items-center gap-1.5 text-xs font-semibold">
-                  <CircleX className="size-3.5" aria-hidden />
-                  {t('field.actual')}
-                </h3>
-                <TextBlock text={bug.actual} />
-              </div>
-            </div>
-          </Section>
-
-          <Section id="images" icon={Image} title={t('field.images')}>
-            {bug.images.length ? (
-              <MediaGallery media={bug.images} />
-            ) : (
-              <p className="text-muted-foreground text-sm">{t('detail.noImages')}</p>
-            )}
-          </Section>
-
-          <Section id="note" icon={StickyNote} title={t('field.note')}>
-            {bug.note ? (
-              <TextBlock text={bug.note} />
-            ) : (
-              <p className="text-muted-foreground text-sm">{t('detail.noNote')}</p>
-            )}
+          <Section id="content" icon={ListOrdered} title={t('field.content')}>
+            <RichContentView html={bug.content} empty={t('detail.noContent')} />
           </Section>
         </div>
 

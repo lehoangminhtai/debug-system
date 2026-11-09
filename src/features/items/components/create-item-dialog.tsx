@@ -88,7 +88,9 @@ function Body({
 
   return (
     <DialogContent
-      className="max-h-[92dvh] overflow-y-auto sm:max-w-4xl"
+      // pb-0: thanh nút sticky cuối form phải sát đáy modal — sticky bám theo vùng cuộn TRỪ padding,
+      // nên còn padding đáy thì khi cuộn thanh nút lơ lửng cách đáy 24px
+      className="max-h-[92dvh] overflow-y-auto pb-0 sm:max-w-4xl"
       showCloseButton={false}
       // Esc / bấm ra ngoài / nút X đều đi qua requestClose
       onEscapeKeyDown={(e) => {

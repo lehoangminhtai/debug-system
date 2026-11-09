@@ -1,9 +1,7 @@
 import {
-  Clock,
   Activity,
   ArrowLeft,
   Calendar,
-  Clapperboard,
   CircleSlash,
   FolderKanban,
   History,
@@ -12,8 +10,6 @@ import {
   Loader2,
   Pencil,
   RotateCcw,
-  Sparkles,
-  TrendingUp,
   User,
   Wrench,
   type LucideIcon,
@@ -48,7 +44,7 @@ import {
   useProjects,
 } from '@/services/queries'
 import { FEATURE_STATUSES, type FeatureStatus } from '@/types'
-import { MediaGallery } from '@/components/common/media-gallery'
+import { RichContentView } from '@/components/common/rich-text'
 import { RejectDialog } from '../components/reject-dialog'
 
 const UNASSIGNED = '__none'
@@ -236,41 +232,7 @@ export function FeatureDetailPage() {
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex flex-col gap-5">
           <Section id="content" icon={Lightbulb} title={t('feature.content')}>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="bg-muted rounded-md border p-3">
-                <h3 className="text-muted-foreground mb-1 flex items-center gap-1.5 text-xs font-semibold">
-                  <Clock className="size-3.5" aria-hidden />
-                  {t('field.current')}
-                </h3>
-                <TextBlock text={f.current} />
-              </div>
-              <div className="border-primary/30 bg-primary-light/50 rounded-md border p-3">
-                <h3 className="text-primary-hover mb-1 flex items-center gap-1.5 text-xs font-semibold">
-                  <Sparkles className="size-3.5" aria-hidden />
-                  {t('field.desired')}
-                </h3>
-                <TextBlock text={f.desired} />
-              </div>
-            </div>
-            <div className="mt-4">
-              <h3 className="text-success-text mb-1 flex items-center gap-1.5 text-xs font-semibold">
-                <TrendingUp className="size-3.5" aria-hidden />
-                {t('field.benefit')}
-              </h3>
-              {f.benefit ? (
-                <TextBlock text={f.benefit} />
-              ) : (
-                <p className="text-muted-foreground text-sm">{t('feature.noBenefit')}</p>
-              )}
-            </div>
-          </Section>
-
-          <Section id="media" icon={Clapperboard} title={t('field.media')}>
-            {f.media.length ? (
-              <MediaGallery media={f.media} />
-            ) : (
-              <p className="text-muted-foreground text-sm">{t('feature.noMedia')}</p>
-            )}
+            <RichContentView html={f.content} empty={t('detail.noContent')} />
           </Section>
         </div>
 

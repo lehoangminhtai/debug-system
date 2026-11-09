@@ -1,7 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
-  Clock,
-  Clapperboard,
   FileText,
   Flag,
   FolderKanban,
@@ -9,8 +7,6 @@ import {
   Loader2,
   MonitorSmartphone,
   SlidersHorizontal,
-  Sparkles,
-  TrendingUp,
   Type,
   User,
   Wrench,
@@ -21,20 +17,19 @@ import { Field, FieldSet } from '@/components/common/field'
 import { OtpDialog } from '@/components/common/otp-dialog'
 import { PersonSelect } from '@/components/common/person-select'
 import { RadioCard } from '@/components/common/radio-card'
+import { RichEditor } from '@/components/common/rich-text'
 import { Section } from '@/components/common/section'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import { UNASSIGNED } from '@/features/bugs/bug-form-schema'
 import { useUnsavedChangesGuard } from '@/hooks/use-unsaved-changes'
 import { cn } from '@/lib/utils'
-import { useI18n, type TKey } from '@/i18n'
+import { useI18n } from '@/i18n'
 import { PLATFORM_ICON, PLATFORM_TONE, PRIORITY_META } from '@/lib/meta'
 import { useMe, usePeople } from '@/services/queries'
 import { PLATFORMS, PRIORITIES, type Feature, type Project } from '@/types'
 import { schema, type FeatureFormValues } from '../feature-form-schema'
-import { MediaField } from '@/components/common/media-field'
 
 interface Props {
   projects: Project[]
@@ -71,23 +66,17 @@ export function FeatureForm({
           title: feature.title,
           platform: feature.platform,
           priority: feature.priority,
-          current: feature.current,
-          desired: feature.desired,
-          benefit: feature.benefit,
+          content: feature.content,
           requester: feature.requester,
           assignee: feature.assignee ?? UNASSIGNED,
-          media: feature.media.map(({ id, type, url, caption, size }) => ({ id, type, url, caption, size })),
         }
       : {
           projectId: String(projects.find((p) => p.key === defaultProjectKey)?.id ?? ''),
           title: '',
           platform: [],
-          current: '',
-          desired: '',
-          benefit: '',
+          content: '',
           requester: currentUser,
           assignee: UNASSIGNED,
-          media: [],
         },
   })
   const { register, control, formState, setValue, getValues } = form
@@ -211,62 +200,27 @@ export function FeatureForm({
         </div>
       </Section>
 
+      {/* Nội dung: hiện tại, mong muốn, lợi ích, ảnh/video/tệp — một ô rich text */}
       <Section
         id="feature-content"
         icon={Lightbulb}
         title={t('feature.content')}
-        description={t('feature.contentDesc')}
-      >
-        <div className="flex flex-col gap-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field id="feature-current" label={t('field.current')} icon={Clock} error={errors.current?.message}>
-              {(c) => (
-                <Textarea {...c} {...register('current')} rows={4} placeholder={t('feature.currentPlaceholder')} />
-              )}
-            </Field>
-            <Field id="feature-desired" label={t('field.desired')} icon={Sparkles} error={errors.desired?.message}>
-              {(c) => (
-                <Textarea {...c} {...register('desired')} rows={4} placeholder={t('feature.desiredPlaceholder')} />
-              )}
-            </Field>
-          </div>
-          <Field id="feature-benefit" label={t('field.benefit')} icon={TrendingUp} error={errors.benefit?.message}>
-            {(c) => <Textarea {...c} {...register('benefit')} rows={2} placeholder={t('feature.benefitPlaceholder')} />}
-          </Field>
-        </div>
-      </Section>
-
-      <Section
-        id="feature-media-section"
-        icon={Clapperboard}
-        title={
-          <span className="flex items-center gap-2">
-            {t('field.media')}
-            <span className="bg-muted text-muted-foreground rounded-sm px-1.5 text-xs font-medium">
-              {t('form.recommended')}
-            </span>
-          </span>
-        }
-        description={<span id="feature-media-hint">{t('feature.mediaDesc')}</span>}
+        description={<span id="feature-content-hint">{t('feature.contentDesc')}</span>}
       >
         <Controller
           control={control}
-          name="media"
+          name="content"
           render={({ field }) => (
-            <MediaField
-              id="feature-media"
+            <RichEditor
+              id="feature-content-editor"
               value={field.value}
               onChange={field.onChange}
-              describedBy="feature-media-hint"
-              invalid={!!errors.media}
+              placeholder={t('feature.contentPlaceholder')}
+              labelledBy="feature-content-title"
+              describedBy="feature-content-hint"
             />
           )}
         />
-        {errors.media?.message && (
-          <p role="alert" className="text-destructive-text mt-2 text-xs">
-            {t(errors.media.message as TKey)}
-          </p>
-        )}
       </Section>
 
       <Section id="feature-other" icon={SlidersHorizontal} title={t('form.other')}>
@@ -315,7 +269,7 @@ export function FeatureForm({
         className={cn(
           'bg-card/95 sticky bottom-0 z-10 flex justify-end gap-2 border-t py-3 backdrop-blur',
           // trong modal: bám đúng lề p-6 của DialogContent; trên trang: bám lề của layout
-          inDialog ? '-mx-6 -mb-6 rounded-b-xl px-6' : '-mx-4 -mb-4 px-4 sm:-mx-6 sm:-mb-6 sm:px-6 xl:-mx-8 xl:px-8',
+          inDialog ? '-mx-6 rounded-b-xl px-6' : '-mx-4 -mb-4 px-4 sm:-mx-6 sm:-mb-6 sm:px-6 xl:-mx-8 xl:px-8',
         )}
       >
         <Button type="button" variant="outline" onClick={onCancel}>

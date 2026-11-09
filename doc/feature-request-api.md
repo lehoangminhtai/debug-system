@@ -41,14 +41,6 @@ type Priority = 'high' | 'medium' | 'low';                 // Cần gấp / Nên
 type FeatureStatus = 'new' | 'accepted' | 'in_progress' | 'done' | 'rejected';
 type Action = 'create' | 'claim' | 'assign' | 'unassign' | 'status' | 'edit';
 
-interface FeatureMedia {
-  id: number;
-  type: 'image' | 'video';
-  url: string;          // '/web_develop/dts/upload/features/FF/FF-F003/<ngẫu nhiên>.webp' — dùng thẳng cho <img>/<video>
-  caption: string;      // '' nếu không có
-  size: number;         // byte
-}
-
 interface FeatureHistory {
   id: number;
   status: FeatureStatus;   // trạng thái SAU thao tác
@@ -65,16 +57,15 @@ interface Feature {
   code: string;            // 'FF-F003'
   title: string;
   platform: Platform;
-  current: string;         // Hiện tại thế nào
-  desired: string;         // Mong muốn thế nào
-  benefit: string;         // '' nếu không có
+  // Từ 09/11/2026: thay cho current / desired / benefit / media — HTML rich text kèm ảnh/video/tệp.
+  // Cùng cơ chế với bug: xem "Nội dung rich text" ở mục 6.6 của debugging-system-api.md
+  content: string;         // '' nếu không có
   priority: Priority;
   status: FeatureStatus;
   rejectReason: string | null;  // chỉ có khi status = 'rejected'
   requester: string;
   assignee: string | null;
   createdAt: string;       // ISO 8601, ví dụ '2026-11-06T10:15:00+07:00'
-  media: FeatureMedia[];   // theo thứ tự thêm
   history: FeatureHistory[]; // cũ → mới
 }
 ```
@@ -114,19 +105,13 @@ Giá trị lọc sai bị bỏ qua. Không phân trang.
       "code": "FF-F003",
       "title": "Lưu món yêu thích để đặt lại nhanh",
       "platform": "mobile",
-      "current": "Muốn đặt lại món cũ phải tìm lại từ đầu",
-      "desired": "Có nút ♥ trên món, xem lại ở tab \"Yêu thích\"",
-      "benefit": "Khách quen đặt nhanh hơn",
+      "content": "<p>Muốn đặt lại món cũ phải tìm lại từ đầu. Mong muốn có nút ♥ trên món.</p><img src=\"/web_develop/dts/upload/features/FF/FF-F003/Ab3kQ9…webp\" alt=\"Phác thảo nút ♥\" /><video src=\"/web_develop/dts/upload/features/FF/FF-F003/Kq9vT2…mp4\" controls=\"true\"></video>",
       "priority": "medium",
       "status": "new",
       "rejectReason": null,
       "requester": "Lan",
       "assignee": null,
       "createdAt": "2026-11-06T10:15:00+07:00",
-      "media": [
-        { "id": 5, "type": "image", "url": "/web_develop/dts/upload/features/FF/FF-F003/Ab3kQ9…webp", "caption": "Phác thảo nút ♥", "size": 182044 },
-        { "id": 6, "type": "video", "url": "/web_develop/dts/upload/features/FF/FF-F003/Kq9vT2…mp4", "caption": "App X đang làm thế này", "size": 8421337 }
-      ],
       "history": [
         { "id": 11, "status": "new", "who": "Lan", "action": "create", "target": null, "createdAt": "2026-11-06T10:15:00+07:00" }
       ]
@@ -162,36 +147,29 @@ Content-Type: multipart/form-data; boundary=…
 
 projectId          = 1
 title              = Lưu món yêu thích để đặt lại nhanh
-platform           = mobile
-current            = Muốn đặt lại món cũ phải tìm lại từ đầu
-desired            = Có nút ♥ trên món, xem lại ở tab "Yêu thích"
-benefit            = Khách quen đặt nhanh hơn
+platforms[]        = mobile
+content            = <p>Muốn đặt lại món cũ phải tìm lại từ đầu. Mong muốn có nút ♥.</p><img src="upload:0"><video src="upload:1"></video>
+files[0]           = <phac-thao.webp>
+files[1]           = <quay-man-hinh.mp4>
 priority           = medium
 requester          = Lan
 assignee           =
-media[0][file]     = <phac-thao.webp>
-media[0][caption]  = Phác thảo nút ♥
-media[1][file]     = <quay-man-hinh.mp4>
-media[1][caption]  = App X đang làm thế này
 otp                = 123456
 ```
 
 | Trường | Bắt buộc | Ràng buộc |
 |---|:-:|---|
 | `projectId` | ✔ | Dự án phải tồn tại |
-| `title` | ✔ | Tối đa 200 ký tự |
-| `platform` | ✔ | `backend` / `frontend` / `mobile` |
-| `current` | ✔ | Tối đa 2000 ký tự |
-| `desired` | ✔ | Tối đa 2000 ký tự |
-| `benefit` | | Tối đa 1000 ký tự |
-| `priority` | ✔ | `high` / `medium` / `low` |
+| `title` | | Không giới hạn độ dài |
+| `platforms[]` | | `backend` / `frontend` / `mobile` / `windows` |
+| `content` | | HTML rich text (hiện tại, mong muốn, lợi ích, ảnh/video/tệp) |
+| `files[N]` | | File mới, trong `content` trỏ bằng `upload:N` |
+| `priority` | | `high` / `medium` / `low`. Bỏ trống = `medium` |
 | `requester` | | Tối đa 100 ký tự. Để trống → người đang đăng nhập |
 | `assignee` | | Tối đa 100 ký tự. Để trống → chưa giao |
-| `media[i][file]` | | File ảnh hoặc video (mục 7) |
-| `media[i][caption]` | | Tối đa 200 ký tự |
 | `otp` | ✔ khi bật OTP | 6 chữ số |
 
-Không có file thì gửi JSON cũng được (cùng tên trường, `media` bỏ trống).
+Quy tắc `content` + `files[N]` (loại file, lọc HTML, lưu trong DB): giống bug — xem "Nội dung rich text" ở mục 6.6 của `debugging-system-api.md`. Không có file thì gửi JSON cũng được.
 
 **Response 201**
 
@@ -217,16 +195,16 @@ Cùng trường với `store`, khác ở:
 | `status` | Không đổi qua đây, dùng `changeStatus` |
 | `assignee` | Gửi giá trị hiện tại của ô. Khác giá trị cũ thì lịch sử ghi `assign`/`unassign`; để trống = bỏ giao |
 
-**File minh hoạ khi sửa:** `media` là **danh sách đầy đủ sau khi sửa**.
+**File khi sửa:** `content` là **nội dung đầy đủ sau khi sửa**; file được đồng bộ theo những gì HTML còn trỏ tới.
 
-| Phần tử | Ý nghĩa |
+| Trong `content` | Kết quả |
 |---|---|
-| `media[i][id]` (+ `caption`) | Giữ file cũ có `id` này, cập nhật chú thích |
-| `media[i][file]` (+ `caption`) | Thêm file mới |
-| File cũ không có trong danh sách | Bị xoá (cả file trên đĩa) |
-| `id` không thuộc đề xuất này, hoặc phần tử có cả `id` lẫn `file` | `422 invalid_media`, không thay đổi gì |
-| Không gửi trường `media` nào | Giữ nguyên toàn bộ file |
-| Gửi `media` rỗng (`media=` trong form, hoặc `"media": []` trong JSON) | Xoá hết file |
+| URL file cũ của **chính đề xuất này** (nguyên văn từ response) | Giữ file |
+| `upload:N` + `files[N]` | Thêm file mới |
+| File cũ không còn được trỏ tới | Bị xoá (cả file trên đĩa) |
+| URL file của đề xuất khác | `422 invalid_media`, không thay đổi gì |
+| Không gửi trường `content` | Giữ nguyên nội dung và file |
+| `content` rỗng | Xoá hết nội dung và file |
 
 ```http
 POST /web_develop/dts/backend/?c=Feature&m=update&code=FF-F003
@@ -234,21 +212,16 @@ Authorization: Bearer <accessToken>
 Content-Type: multipart/form-data; boundary=…
 
 title              = Lưu món yêu thích (đồng bộ nhiều thiết bị)
-platform           = mobile
-current            = …
-desired            = …
-benefit            = …
+platforms[]        = mobile
+content            = <p>…</p><img src="/web_develop/dts/upload/features/FF/FF-F003/Ab3kQ9…webp"><img src="upload:0">
+files[0]           = <phac-thao-moi.webp>
 priority           = high
 requester          = Lan
 assignee           = Minh
-media[0][id]       = 5
-media[0][caption]  = Phác thảo nút ♥ (bản 2)
-media[1][file]     = <phac-thao-moi.webp>
-media[1][caption]  = Màn hình tab Yêu thích
 otp                = 123456
 ```
 
-→ Giữ file 5 (đổi chú thích), xoá file 6 (video), thêm một ảnh mới.
+→ Giữ ảnh cũ, xoá video (không còn trong HTML), thêm một ảnh mới.
 
 **Response 200:** `{ "data": Feature, "success": true }`. Lịch sử thêm `edit`, và `assign`/`unassign` nếu đổi người.
 
@@ -325,18 +298,11 @@ Content-Type: application/json
 
 ---
 
-## 10. File minh hoạ
+## 10. File đính kèm
 
-| | Ảnh | Video |
-|---|---|---|
-| Nhận | PNG, JPEG, WebP, GIF | MP4, WebM |
-| Dung lượng tối đa | 5 MB | 30 MB |
-| Số lượng | Tổng tối đa 6 file / đề xuất (tính cả file giữ lại khi sửa), trong đó tối đa 2 video | |
+Từ 09/11/2026 file nằm trong `content` (ảnh, video, tệp PDF/Word/Excel/ZIP…), không giới hạn số lượng/dung lượng ngoài giới hạn upload của PHP. Quy tắc đầy đủ: "Nội dung rich text" ở mục 6.6 của `debugging-system-api.md`.
 
-- Server xác định loại bằng **nội dung file**, không theo đuôi hay Content-Type. SVG, HTML, PHP, video QuickTime `.mov` (iPhone) đều bị từ chối với `invalid_media`.
-- **Ảnh:** nén ở trình duyệt như form bug (WebP, cạnh dài 1600px, chất lượng 0,85), rồi gửi dạng `Blob` có tên file, ví dụ `anh-1.webp`.
-- **Video:** gửi file gốc. Gợi ý người dùng quay ngắn. Video iPhone `.mov` cần chuyển sang MP4 trước.
-- **Một lần lưu nên dưới khoảng 60 MB.** Đã đo trên server: request 61 MB qua được, request 81 MB bị lỗi 500. Nếu tổng file mới vượt quá, lưu bớt rồi thêm phần còn lại ở lần sửa sau: file cũ chỉ gửi `id`, không gửi lại nội dung.
+- **Một lần lưu nên dưới khoảng 60 MB.** Đã đo trên server: request 61 MB qua được, request 81 MB bị lỗi 500. Nếu tổng file mới vượt quá, lưu bớt rồi thêm phần còn lại ở lần sửa sau: file cũ chỉ gửi lại URL trong `content`, không gửi lại nội dung file.
 
 ---
 
@@ -346,16 +312,16 @@ Ngoài các mã chung (`401`, `403 no_access`, `404 not_found`, `405`, `422` val
 
 | HTTP | `code` | Khi nào |
 |---|---|---|
-| 422 | `invalid_media` | File không phải ảnh/video được nhận, `id` không thuộc đề xuất này, hoặc phần tử có cả `id` lẫn `file` |
-| 422 | `media_too_large` | Ảnh > 5 MB, video > 30 MB, hoặc vượt giới hạn upload của PHP trên server |
-| 422 | `too_many_media` | Hơn 6 file |
-| 422 | `too_many_videos` | Hơn 2 video |
+| 422 | `invalid_media` | File không phải ảnh/video/tệp được nhận, `upload:N` thiếu file, hoặc `content` trỏ tới file của đề xuất khác |
+| 422 | `media_too_large` | Vượt giới hạn upload của PHP trên server |
 | 422 | `reject_reason_required` | Từ chối mà không có lý do |
 | 413 / 500 | (không có) | Tổng request quá lớn (mục 10) |
 
 ---
 
 ## 12. Mẫu client
+
+> ⚠️ Mẫu dưới đây là bản cũ (`current`/`desired`/`benefit`/`media`). Code đang dùng: `featureForm()` + `appendContent()` trong `src/services/api.ts`.
 
 Hàm `api()` trong tài liệu bug luôn đặt `Content-Type: application/json`. Với FormData thì **không được** tự đặt `Content-Type` (trình duyệt tự thêm `boundary`), nên dùng một hàm riêng:
 

@@ -249,7 +249,7 @@ Lỗi nghiệp vụ luôn có dạng:
 
 FE dịch theo `code` qua khoá `error.<code>`, **không hiển thị `message`**. Đây đúng là cơ chế `BS(code)` + `tC()` đang có.
 
-**Lỗi validate (422 không có `code`):** `errors` dùng đúng tên trường FE gửi (`title`, `isCore`, `projectId`, `steps`, `images.0.url`…). Câu thông báo là tiếng Anh mặc định của Laravel, trừ lỗi `steps` là tiếng Việt. FE đã validate cùng giới hạn bằng zod, nên lỗi này hiếm khi xảy ra. Khi gặp, chỉ cần đánh dấu ô lỗi và dùng câu i18n của FE.
+**Lỗi validate (422 không có `code`):** `errors` dùng đúng tên trường FE gửi (`title`, `isCore`, `projectId`, `platforms`…). Câu thông báo là tiếng Anh mặc định của Laravel. FE đã validate cùng giới hạn bằng zod, nên lỗi này hiếm khi xảy ra. Khi gặp, chỉ cần đánh dấu ô lỗi và dùng câu i18n của FE.
 
 ### 3.3. Kiểu dữ liệu chung
 
@@ -277,12 +277,6 @@ interface Project {
   mustFixOpen: number;    // MỚI — số bug bắt buộc sửa chưa đóng (sidebar)
 }
 
-interface BugImage {
-  id: number;
-  url: string;            // '/web_develop/dts/upload/bugs/FF/FF-001/<ngẫu nhiên>.webp' — dùng thẳng làm <img src>
-  caption: string;        // '' nếu không có
-}
-
 interface HistoryEntry {
   id: number;
   status: Status;         // trạng thái SAU thao tác
@@ -302,15 +296,14 @@ interface Bug {
   isCore: boolean;
   severity: Severity;
   mustFix: boolean;       // MỚI — isCore || severity === 'critical'
-  steps: string;          // mỗi dòng một bước, nối bằng '\n'
-  expected: string;
-  actual: string;
+  // Từ 09/11/2026: thay cho steps / expected / actual / images (xem mục 6.6 "Nội dung rich text").
+  // HTML đã lọc; ảnh/video/tệp trỏ tới URL công khai, vd src="/web_develop/dts/upload/bugs/FF/FF-001/<ngẫu nhiên>.webp"
+  content: string;        // '' nếu không có
   note: string;           // '' nếu không có
   reporter: string;
   assignee: string | null;
   status: Status;
   createdAt: string;
-  images: BugImage[];     // sắp theo thứ tự thêm
   history: HistoryEntry[];// cũ → mới
 }
 
@@ -484,17 +477,12 @@ Giá trị lọc không hợp lệ bị bỏ qua, không báo lỗi.
       "isCore": true,
       "severity": "critical",
       "mustFix": true,
-      "steps": "Đăng nhập tài khoản có số dư ví\nThêm 2 món vào giỏ hàng\nMở giỏ hàng\nChọn phương thức \"Ví FoodFast\"\nBấm Thanh toán",
-      "expected": "Chuyển sang màn hình xác nhận đơn hàng.",
-      "actual": "Ứng dụng bị đóng ngay lập tức, không có thông báo lỗi.",
+      "content": "<ol><li><p>Đăng nhập tài khoản có số dư ví</p></li><li><p>Bấm Thanh toán</p></li></ol><p>Ứng dụng bị đóng ngay lập tức.</p><img src=\"/web_develop/dts/upload/bugs/FF/FF-001/Xr8Qk2vTn5mW0pLs7dYc3uHa9eGbJf1z.webp\" alt=\"Hộp thoại sự cố\" />",
       "note": "iPhone 13, iOS 17.4, app 2.3.0 (build 412).",
       "reporter": "Lan",
       "assignee": "Minh",
       "status": "fixing",
       "createdAt": "2026-10-30T16:30:00+07:00",
-      "images": [
-        { "id": 1, "url": "/web_develop/dts/upload/bugs/FF/FF-001/Xr8Qk2vTn5mW0pLs7dYc3uHa9eGbJf1z.webp", "caption": "Hộp thoại sự cố sau khi bấm Thanh toán" }
-      ],
       "history": [
         { "id": 1, "status": "new",    "who": "Lan",  "action": "create", "target": null, "createdAt": "2026-10-30T16:30:00+07:00" },
         { "id": 2, "status": "fixing", "who": "Minh", "action": "claim",  "target": null, "createdAt": "2026-10-31T18:30:00+07:00" }
@@ -545,7 +533,7 @@ Bỏ `key` để tính gộp mọi dự án.
 
 ### 6.5. Chi tiết bug
 
-Màn hình: `/bugs/:code`, gồm thanh tiến trình 4 bước, thông tin, bước tái tạo, mong đợi và thực tế, hình minh chứng, lịch sử.
+Màn hình: `/bugs/:code`, gồm thanh tiến trình 4 bước, thông tin, mô tả lỗi (`content` — hiển thị bằng Tiptap chỉ đọc, bấm ảnh để xem lớn), ghi chú, lịch sử.
 
 **Request**
 
@@ -588,47 +576,44 @@ Màn hình: `/bugs/new` (form `BugFormPage`). Giữ nguyên hàm chuyển dữ l
 ```http
 POST /web_develop/dts/backend/?c=Bug&m=store
 Authorization: Bearer <accessToken>
-Content-Type: application/json
+Content-Type: multipart/form-data; boundary=…
 
-{
-  "projectId": 1,
-  "title": "App bị đóng khi bấm Thanh toán",
-  "platform": "mobile",
-  "isCore": true,
-  "severity": "critical",
-  "steps": "Mở giỏ hàng\nBấm Thanh toán",
-  "expected": "Chuyển sang màn hình xác nhận",
-  "actual": "App bị đóng",
-  "note": "iPhone 13, iOS 17.4",
-  "reporter": "Lan",
-  "assignee": null,
-  "images": [
-    { "url": "data:image/webp;base64,UklGRlIAAABXRUJQVlA4…", "caption": "Màn hình lúc bị đóng" }
-  ]
-}
+projectId=1
+title=App bị đóng khi bấm Thanh toán
+platforms[]=mobile
+isCore=1
+severity=critical
+content=<ol><li><p>Mở giỏ hàng</p></li><li><p>Bấm Thanh toán</p></li></ol><p>App bị đóng</p><img src="upload:0"><p><a href="upload:1">log.txt</a></p>
+files[0]=<file mau.webp>
+files[1]=<file log.txt>
+note=iPhone 13, iOS 17.4
+reporter=Lan
+otp=123456
 ```
 
 | Trường | Kiểu | Bắt buộc | Ràng buộc |
 |---|---|:-:|---|
 | `projectId` | number | ✔ | Dự án phải tồn tại |
-| `title` | string | ✔ | Tối đa 200 ký tự |
-| `platform` | string | ✔ | `backend` / `frontend` / `mobile` |
-| `isCore` | boolean | ✔ | |
-| `severity` | string | ✔ | `critical` / `high` / `medium` / `low` |
-| `steps` | string | ✔ | Mỗi dòng một bước, 1–30 bước, mỗi bước tối đa 500 ký tự. Dòng trống bị bỏ |
-| `expected` | string | ✔ | Tối đa 1000 ký tự |
-| `actual` | string | ✔ | Tối đa 1000 ký tự |
-| `note` | string \| null | | Tối đa 2000 ký tự |
+| `title` | string | | Không giới hạn độ dài |
+| `platforms[]` | string[] | | `backend` / `frontend` / `mobile` / `windows` |
+| `isCore` | `1` / `0` | | Bỏ trống = không cốt lõi |
+| `severity` | string | | `critical` / `high` / `medium` / `low`. Bỏ trống = `medium` |
+| `content` | string (HTML) | | Rich text: bước tái tạo, kết quả, ảnh/video/tệp. Xem bên dưới |
+| `files[N]` | file | | File mới, trong `content` trỏ tới bằng `upload:N` |
+| `note` | string \| null | | |
 | `reporter` | string \| null | | Tối đa 100 ký tự. Để trống thì lấy người đang đăng nhập |
 | `assignee` | string \| null | | Tối đa 100 ký tự. `null` = chưa giao |
-| `images` | array | | Tối đa 6 ảnh |
-| `images[].url` | string | ✔ | Data URL `data:image/...;base64,...` |
-| `images[].caption` | string | | Tối đa 200 ký tự |
 
-Về ảnh:
+#### Nội dung rich text (`content` + `files[N]`) — từ 09/11/2026
 
-- Giữ nguyên bước nén ở FE (WebP, cạnh dài 1600 px, chất lượng 0,85). Backend nhận PNG, JPEG, WebP, GIF, mỗi ảnh tối đa **5 MB sau khi giải mã**, và kiểm tra nội dung thật của file. SVG bị từ chối.
-- Ngưỡng 10 MB ở FE (`toast.imageTooLarge`) áp cho file gốc trước khi nén, vẫn giữ được.
+Thay cho `steps`, `expected`, `actual`, `images` (bug) và `current`, `desired`, `benefit`, `media` (đề xuất). Dữ liệu cũ đã được migration `2026_11_09_000100_merge_content_into_rich_text` chuyển sang HTML; cột cũ vẫn giữ trong DB nhưng API không đọc/ghi nữa.
+
+- **File mới:** gửi kèm `files[N]`; trong HTML trỏ tới bằng `src="upload:N"` (ảnh `<img>`, video `<video>`) hoặc `href="upload:N"` (tệp, là link `<a>`). Backend lưu file rồi thay bằng URL thật. `upload:N` không có file đi kèm → `422 invalid_media`. File gửi lên mà HTML không trỏ tới thì bị bỏ qua.
+- **Loại file** (kiểm theo nội dung thật, không tin đuôi/MIME trình duyệt khai): ảnh PNG/JPEG/WebP/GIF, video MP4/MOV/WebM/MKV/AVI; tệp đính kèm theo đuôi `pdf, txt, log, csv, json, doc, docx, xls, xlsx, ppt, pptx, zip, rar, 7z`. SVG, HTML, XML, PHP… bị từ chối (`422 invalid_media`). Không giới hạn số file/dung lượng, ngoài giới hạn upload của PHP (`422 media_too_large`).
+- **FE nén ảnh** về WebP cạnh dài 1600 px trước khi gửi (GIF giữ nguyên). Tệp đính kèm được lưu kèm tên gốc (ASCII) trong tên file để người tải còn nhận ra.
+- **HTML được lọc** (symfony/html-sanitizer): chỉ giữ `p, br, strong, em, u, s, code, pre, blockquote, ul, ol, li, hr, a[href], img[src,alt], video[src,controls]`. Ảnh/video chỉ được trỏ tới file upload của chính bug/đề xuất; ảnh ngoài, `data:` URL bị bỏ. Link nhận `http`, `https`, `mailto` và luôn mở tab mới.
+- **Trong DB** file được lưu dạng `__upload__/<đường dẫn>`, response đổi lại thành URL công khai theo môi trường (`/dts/upload/…` hoặc `/web_develop/dts/upload/…`), nên chép DB giữa staging/production không vỡ link.
+- Mỗi file vẫn có một dòng trong `bug_images` / `feature_request_media` (`type`: `image` / `video` / `file`) để biết file thuộc bug/đề xuất nào khi sửa hoặc xoá.
 
 **Response 201**
 
@@ -644,17 +629,12 @@ Về ảnh:
     "isCore": true,
     "severity": "critical",
     "mustFix": true,
-    "steps": "Mở giỏ hàng\nBấm Thanh toán",
-    "expected": "Chuyển sang màn hình xác nhận",
-    "actual": "App bị đóng",
+    "content": "<ol><li><p>Mở giỏ hàng</p></li><li><p>Bấm Thanh toán</p></li></ol><p>App bị đóng</p><img src=\"/web_develop/dts/upload/bugs/FF/FF-008/Kq3VbT0wZx9LmN2rS8yUe5JhC7aPd4Fg.webp\" /><p><a href=\"/web_develop/dts/upload/bugs/FF/FF-008/Pz8…-log.txt\" target=\"_blank\" rel=\"noopener noreferrer\">log.txt</a></p>",
     "note": "iPhone 13, iOS 17.4",
     "reporter": "Lan",
     "assignee": null,
     "status": "new",
     "createdAt": "2026-11-06T09:15:42+07:00",
-    "images": [
-      { "id": 12, "url": "/web_develop/dts/upload/bugs/FF/FF-008/Kq3VbT0wZx9LmN2rS8yUe5JhC7aPd4Fg.webp", "caption": "Màn hình lúc bị đóng" }
-    ],
     "history": [
       { "id": 31, "status": "new", "who": "Nguyễn Minh", "action": "create", "target": null, "createdAt": "2026-11-06T09:15:42+07:00" }
     ]
@@ -667,7 +647,7 @@ Về ảnh:
 - Có `assignee` thì lịch sử ghi `create` rồi `assign`.
 - Sau khi tạo: invalidate `["projects"]` (vì `nextSeq`, `mustFixOpen` đổi) và `["bugs"]`.
 
-**Lỗi:** `404 not_found` (dự án đã bị xoá), `422 invalid_image`, `422 image_too_large`, `422` lỗi validate, `500 upload_failed`.
+**Lỗi:** `404 not_found` (dự án đã bị xoá), `422 invalid_media`, `422 media_too_large`, `422` lỗi validate, `500 upload_failed`. File lỗi không tốn số thứ tự bug.
 
 ---
 
@@ -682,24 +662,18 @@ Màn hình: `/bugs/:code/edit`. Form khoá ô dự án (`form.projectLocked`). H
 ```http
 POST /web_develop/dts/backend/?c=Bug&m=update&code=FF-008
 Authorization: Bearer <accessToken>
-Content-Type: application/json
+Content-Type: multipart/form-data; boundary=…
 
-{
-  "title": "App bị đóng khi bấm Thanh toán bằng ví",
-  "platform": "mobile",
-  "isCore": true,
-  "severity": "critical",
-  "steps": "Mở giỏ hàng\nChọn Ví FoodFast\nBấm Thanh toán",
-  "expected": "Chuyển sang màn hình xác nhận",
-  "actual": "App bị đóng",
-  "note": "iPhone 13, iOS 17.4. Không xảy ra khi trả bằng thẻ.",
-  "reporter": "Lan",
-  "assignee": "Hùng",
-  "images": [
-    { "url": "/web_develop/dts/upload/bugs/FF/FF-008/Kq3VbT0wZx9LmN2rS8yUe5JhC7aPd4Fg.webp", "caption": "Màn hình lúc bị đóng (sửa chú thích)" },
-    { "url": "data:image/webp;base64,UklGRlIAAABXRUJQVlA4…", "caption": "Ảnh mới" }
-  ]
-}
+title=App bị đóng khi bấm Thanh toán bằng ví
+platforms[]=mobile
+isCore=1
+severity=critical
+content=<p>Chọn Ví FoodFast rồi bấm Thanh toán</p><img src="/web_develop/dts/upload/bugs/FF/FF-008/Kq3VbT0wZx9LmN2rS8yUe5JhC7aPd4Fg.webp"><img src="upload:0">
+files[0]=<file anh-moi.webp>
+note=iPhone 13, iOS 17.4. Không xảy ra khi trả bằng thẻ.
+reporter=Lan
+assignee=Hùng
+otp=123456
 ```
 
 Các trường giống mục 6.6, với ba khác biệt:
@@ -710,17 +684,18 @@ Các trường giống mục 6.6, với ba khác biệt:
 | `reporter` | **Bắt buộc** |
 | `status`, `code` | Không đổi được qua endpoint này (gửi cũng bị bỏ qua). Đổi trạng thái dùng mục 6.8 |
 
-`images` là **danh sách đầy đủ sau khi sửa**:
+`content` là **nội dung đầy đủ sau khi sửa**; file của bug được đồng bộ theo những gì HTML còn trỏ tới:
 
-| Phần tử gửi lên | Kết quả |
+| Trong `content` | Kết quả |
 |---|---|
-| `url` là URL ảnh cũ của **chính bug này** (nguyên văn từ response) | Giữ ảnh, giữ `id`, cập nhật `caption` |
-| `url` là data URL | Thêm ảnh mới |
-| Ảnh cũ không có trong danh sách | Xoá ảnh và file |
-| `url` khác (ảnh của bug khác, link ngoài) | `422 invalid_image`, không thay đổi gì |
-| Bỏ hẳn trường `images` | Giữ nguyên toàn bộ ảnh |
+| URL file cũ của **chính bug này** (nguyên văn từ response) | Giữ file |
+| `upload:N` + `files[N]` | Thêm file mới |
+| File cũ không còn được trỏ tới | Xoá dòng `bug_images` và file trên đĩa (sau khi commit) |
+| URL file của bug khác | `422 invalid_media`, không thay đổi gì |
+| Bỏ hẳn trường `content` | Giữ nguyên nội dung và file |
+| `content` rỗng | Xoá hết nội dung và file |
 
-Form hiện tại đã gửi lại `url` của ảnh cũ nguyên văn, nên không phải sửa.
+FE gửi lại URL file cũ nguyên văn (cắt origin khi dev, xem `contentOut` trong `src/services/api.ts`).
 
 `assignee`: gửi giá trị thì đổi người sửa (lịch sử ghi `assign` / `unassign` nếu khác giá trị cũ). Bỏ hẳn trường thì giữ nguyên.
 
@@ -730,7 +705,7 @@ Form hiện tại đã gửi lại `url` của ảnh cũ nguyên văn, nên khô
 { "data": { /* Bug sau khi sửa — lịch sử thêm "edit", và "assign" nếu đổi người */ }, "success": true }
 ```
 
-**Lỗi:** `404 not_found`, `422 invalid_image`, `422 image_too_large`, `422` lỗi validate, `500 upload_failed`. Khi lỗi, bug giữ nguyên trạng thái trước khi sửa, kể cả ảnh.
+**Lỗi:** `404 not_found`, `422 invalid_media`, `422 media_too_large`, `422` lỗi validate, `500 upload_failed`. Khi lỗi, bug giữ nguyên trạng thái trước khi sửa, kể cả file.
 
 ---
 
