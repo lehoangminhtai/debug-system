@@ -5,9 +5,15 @@ import type {
   Feature,
   FeatureInput,
   FeatureStatus,
+  ItemRow,
+  Mine,
   Platform,
+  Priority,
   Project,
   ProjectInput,
+  Comment,
+  CommentKind,
+  RichInput,
   Severity,
   Status,
   UploadFile,
@@ -85,7 +91,8 @@ export async function login(username: string, password: string, otp?: string) {
 // '/web_develop/dts/upload/...' ở staging): ghép FILE_ORIGIN để <img>/<video> chạy được cả khi dev
 // (backend ở host khác). Khi gửi lại (sửa) phải trả về đúng nguyên văn nên cắt origin đi.
 // `="/x` nhưng không phải `="//host` (URL không giao thức).
-const contentIn = (html: string | null | undefined) => (html ?? '').replace(/\b(src|href)="\/(?!\/)/g, `$1="${FILE_ORIGIN}/`)
+const contentIn = (html: string | null | undefined) =>
+  (html ?? '').replace(/\b(src|href)="\/(?!\/)/g, `$1="${FILE_ORIGIN}/`)
 const contentOut = (html: string) => html.replaceAll(`="${FILE_ORIGIN}/`, '="/')
 
 /** `content` (HTML, file mới là `upload:N`) + `files[N]` */
@@ -93,6 +100,8 @@ function appendContent(fd: FormData, content: string, files: UploadFile[]) {
   fd.append('content', contentOut(content))
   files.forEach((f, i) => fd.append(`files[${i}]`, f.blob, f.name))
 }
+
+const commentsIn = (comments?: Comment[]) => comments?.map((c) => ({ ...c, content: contentIn(c.content) }))
 
 /** `platforms` (mảng) hoặc `platform` (chuỗi/mảng) của backend cũ → mảng; giá trị cũ 'window' → 'windows' */
 const platformsIn = (v: Platform | Platform[]) =>
@@ -106,6 +115,7 @@ const bugIn = (b: Bug & { platforms?: Platform[] }): Bug => {
     platform: platformsIn(platforms ?? rest.platform),
     content: contentIn(b.content),
     history: b.history.map((h) => ({ ...h, target: h.target ?? undefined })),
+    comments: commentsIn(b.comments),
   }
 }
 
@@ -129,7 +139,20 @@ const featureIn = ({ platforms, ...f }: Feature & { platforms?: Platform[] }): F
   platform: platformsIn(platforms ?? f.platform),
   content: contentIn(f.content),
   history: f.history.map((h) => ({ ...h, target: h.target ?? undefined })),
+  comments: commentsIn(f.comments),
 })
+
+/**
+ * Bình luận (Bug|Feature@addComment/updateComment/deleteComment). Không cần OTP.
+ * Backend trả lại cả bug/đề xuất kèm `comments` → dùng thẳng làm cache chi tiết.
+ */
+async function commentRequest(kind: CommentKind, m: string, code: string, id?: number, input?: RichInput) {
+  const fd = new FormData()
+  if (input) appendContent(fd, input.content, input.files)
+  const query = { code, id: id ? String(id) : undefined }
+  if (kind === 'bug') return bugIn((await request<{ data: Bug }>('Bug', m, { method: 'POST', query, body: fd })).data)
+  return featureIn((await request<{ data: Feature }>('Feature', m, { method: 'POST', query, body: fd })).data)
+}
 
 /** multipart/form-data cho Feature@store/update (doc feature-request-api §12) */
 function featureForm({ platform, content, files, ...fields }: FeatureInput, otp: string) {
@@ -153,14 +176,56 @@ export interface BugQuery {
   status?: Status
   severity?: Severity
   q?: string
+  mine?: Mine
   sortBy?: 'code' | 'title' | 'severity' | 'status' | 'created_at'
   sortDir?: 'asc' | 'desc'
+}
+
+/** Bộ lọc/tìm kiếm gửi lên Feature@index — server xử lý, FE không tự lọc */
+export interface FeatureQuery {
+  project?: string
+  platform?: Platform
+  priority?: Priority
+  status?: FeatureStatus
+  q?: string
+  mine?: Mine
+  sortBy?: 'code' | 'title' | 'priority' | 'status' | 'created_at'
+  sortDir?: 'asc' | 'desc'
+}
+
+/** Bảng gộp (Item@index): lọc + sắp xếp + phân trang + đếm tổng đều ở server */
+export interface ItemQuery {
+  project?: string
+  type?: 'bug' | 'feature'
+  q?: string
+  mine?: Mine
+  platform?: Platform
+  core?: 'yes' | 'no'
+  severity?: Severity
+  status?: Status
+  priority?: Priority
+  fstatus?: FeatureStatus
+  sortBy?: 'code' | 'level' | 'status' | 'created_at'
+  sortDir?: 'asc' | 'desc'
+  /** Bắt đầu từ 1 */
+  page: number
+  perPage: number
+}
+
+export interface ItemPage {
+  items: ItemRow[]
+  total: number
 }
 
 export interface ReleaseStatus {
   project: string | null
   ready: boolean
+  blockingCount: number
   blocking: Pick<Bug, 'code' | 'title' | 'platform' | 'isCore' | 'severity' | 'status' | 'assignee'>[]
+  /** Chỉ khi gộp mọi dự án (không truyền key) */
+  projects?: { key: string; name: string; ready: boolean; blockingCount: number }[]
+  totalProjects?: number
+  blockedProjects?: number
 }
 
 export interface Me {
@@ -181,7 +246,8 @@ export interface Person {
 export const api = {
   me: () => data<Me>(request('Auth', 'me')),
 
-  listUsers: () => data<Person[]>(request('User', 'index', { query: { limit: '200' } })),
+  /** `q`: tìm theo username, họ tên, email, mã nhân viên (server) */
+  listUsers: (q?: string) => data<Person[]>(request('User', 'index', { query: { limit: '200', q: q?.trim() } })),
 
   listProjects: () => data<Project[]>(request('Project', 'index')),
 
@@ -199,6 +265,7 @@ export const api = {
             status: f.status,
             severity: f.severity,
             q: f.q?.trim(),
+            mine: f.mine,
             sort_by: f.sortBy,
             sort_dir: f.sortDir,
           },
@@ -233,9 +300,51 @@ export const api = {
     await request('Bug', 'destroy', { method: 'POST', query: { code }, body: { confirm, otp } })
   },
 
-  // ── Tính năng mong muốn: tải hết theo dự án, lọc ở client (doc feature-request-api §2) ──
-  listFeatures: async (project?: string) =>
-    (await data<Feature[]>(request('Feature', 'index', { query: { project } }))).map(featureIn),
+  // ── Tính năng mong muốn: lọc/tìm ở server như bug (doc feature-request-api §2) ──
+  listFeatures: async (f: FeatureQuery = {}) =>
+    (
+      await data<Feature[]>(
+        request('Feature', 'index', {
+          query: {
+            project: f.project,
+            platform: f.platform,
+            priority: f.priority,
+            status: f.status,
+            q: f.q?.trim(),
+            mine: f.mine,
+            sort_by: f.sortBy,
+            sort_dir: f.sortDir,
+          },
+        }),
+      )
+    ).map(featureIn),
+
+  listItems: async (f: ItemQuery): Promise<ItemPage> => {
+    const json = await request<{ data: ItemRow[]; meta: { total: number } }>('Item', 'index', {
+      query: {
+        project: f.project,
+        type: f.type,
+        q: f.q?.trim(),
+        mine: f.mine,
+        platform: f.platform,
+        is_core: f.core && (f.core === 'yes' ? '1' : '0'),
+        severity: f.severity,
+        status: f.status,
+        priority: f.priority,
+        fstatus: f.fstatus,
+        sort_by: f.sortBy,
+        sort_dir: f.sortDir,
+        page: String(f.page),
+        per_page: String(f.perPage),
+      },
+    })
+    return {
+      items: json.data.map((r) =>
+        r.kind === 'bug' ? { kind: 'bug', data: bugIn(r.data) } : { kind: 'feature', data: featureIn(r.data) },
+      ),
+      total: json.meta.total,
+    }
+  },
 
   getFeature: async (code: string) =>
     featureIn(await data(request<{ data: Feature }>('Feature', 'show', { query: { code } }))),
@@ -278,4 +387,10 @@ export const api = {
   deleteFeature: async (code: string, confirm: string, otp: string) => {
     await request('Feature', 'destroy', { method: 'POST', query: { code }, body: { confirm, otp } })
   },
+
+  // ── Bình luận (bug + đề xuất): `id` có = sửa, không có = thêm ──
+  saveComment: (kind: CommentKind, code: string, input: RichInput, id?: number) =>
+    commentRequest(kind, id ? 'updateComment' : 'addComment', code, id, input),
+
+  deleteComment: (kind: CommentKind, code: string, id: number) => commentRequest(kind, 'deleteComment', code, id),
 }

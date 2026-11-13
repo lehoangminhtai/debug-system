@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { MustFixBadge, PlatformBadge, SeverityBadge } from '@/components/common/badges'
+import { CommentBadge } from '@/components/common/comment-badge'
 import { Hint } from '@/components/common/hint'
 import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
@@ -16,7 +17,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useI18n } from '@/i18n'
 import { STATUS_META, TONE_TEXT } from '@/lib/meta'
-import { severityRank } from '@/lib/rules'
 import { cn } from '@/lib/utils'
 import { useChangeStatus } from '@/services/queries'
 import { STATUSES, type Bug, type Status } from '@/types'
@@ -98,8 +98,17 @@ function KanbanCard({
             {t('field.core')}
           </span>
         )}
-        {bug.mustFix && bug.status !== 'closed' && <MustFixBadge />}
-        <span className="text-muted-foreground ml-auto inline-flex items-center gap-1.5 text-xs">
+        {bug.blocksRelease && <MustFixBadge />}
+        <span className="ml-auto inline-flex items-center gap-2">
+          <CommentBadge
+            kind="bug"
+            code={bug.code}
+            count={bug.commentCount}
+            last={bug.lastComment}
+            className="relative z-10"
+          />
+        </span>
+        <span className="text-muted-foreground inline-flex items-center gap-1.5 text-xs">
           {bug.assignee ? (
             <>
               <UserAvatar name={bug.assignee} />
@@ -129,10 +138,8 @@ export function KanbanBoard({ bugs }: { bugs: Bug[] }) {
     )
   }
 
-  const byColumn = (s: Status) =>
-    bugs
-      .filter((b) => b.status === s)
-      .sort((a, b) => severityRank(a.severity) - severityRank(b.severity) || b.createdAt.localeCompare(a.createdAt))
+  // Server đã sắp (mức độ → mới nhất, sort_by=severity); ở đây chỉ chia cột theo trạng thái
+  const byColumn = (s: Status) => bugs.filter((b) => b.status === s)
 
   return (
     <div

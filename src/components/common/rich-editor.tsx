@@ -24,6 +24,7 @@ import { useI18n, type TKey } from '@/i18n'
 import { downscaleImageBlob } from '@/lib/image'
 import { MEDIA_ACCEPT, isAttachmentFile, isImageFile, isVideoFile } from '@/lib/media'
 import { addPendingFile } from '@/lib/pending-files'
+import { cn } from '@/lib/utils'
 import { richExtensions } from '@/lib/rich-content'
 
 type OnFiles = (editor: Editor, files: File[], pos?: number) => void
@@ -100,10 +101,13 @@ interface Props {
   placeholder?: string
   labelledBy?: string
   describedBy?: string
+  /** Bình luận: ô thấp hơn, bỏ dòng hướng dẫn kéo thả (chỉ hiện khi đang xử lý file) */
+  compact?: boolean
+  autoFocus?: boolean
 }
 
 /** Soạn nội dung rich text kèm ảnh/video/tệp — dùng chung cho form bug và form đề xuất tính năng */
-export function RichEditor({ id, value, onChange, placeholder, labelledBy, describedBy }: Props) {
+export function RichEditor({ id, value, onChange, placeholder, labelledBy, describedBy, compact, autoFocus }: Props) {
   const { t } = useI18n()
   const inputRef = useRef<HTMLInputElement>(null)
   const [processing, setProcessing] = useState(false)
@@ -126,8 +130,12 @@ export function RichEditor({ id, value, onChange, placeholder, labelledBy, descr
   }
 
   const editor = useEditor({
-    extensions: [...richExtensions(placeholder), FileHandler.configure({ onFiles: (e, f, p) => void addFiles(e, f, p) })],
+    extensions: [
+      ...richExtensions(placeholder),
+      FileHandler.configure({ onFiles: (e, f, p) => void addFiles(e, f, p) }),
+    ],
     content: value,
+    autofocus: autoFocus ? 'end' : false,
     // thanh công cụ cần vẽ lại theo vị trí con trỏ (nút đậm/nghiêng đang bật)
     shouldRerenderOnTransaction: true,
     editorProps: {
@@ -137,7 +145,12 @@ export function RichEditor({ id, value, onChange, placeholder, labelledBy, descr
         'aria-multiline': 'true',
         ...(labelledBy && { 'aria-labelledby': labelledBy }),
         ...(describedBy && { 'aria-describedby': describedBy }),
-        class: 'rich-content min-h-40 px-3 py-2 outline-none',
+        class: cn(
+          'rich-content px-3 py-2 outline-none',
+          // compact (bình luận): ảnh/video dán vào chỉ là ảnh nhỏ xem trước (file gửi lên vẫn nguyên), ô không cao
+          // quá 12rem — dài hơn thì cuộn trong ô, nút Gửi/Hủy bên dưới luôn trong tầm mắt
+          compact ? 'max-h-48 min-h-16 overflow-y-auto [&_img]:max-h-24 [&_img]:w-auto [&_video]:max-h-28' : 'min-h-40',
+        ),
       },
     },
     onUpdate: ({ editor }) => onChange(editor.isEmpty ? '' : editor.getHTML()),
@@ -208,13 +221,15 @@ export function RichEditor({ id, value, onChange, placeholder, labelledBy, descr
 
       <EditorContent editor={editor} />
 
-      <p
-        className="text-muted-foreground flex items-center gap-1.5 border-t px-3 py-1.5 text-xs"
-        role={processing ? 'status' : undefined}
-      >
-        {processing && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
-        {processing ? t('form.processing') : t('editor.hint')}
-      </p>
+      {(!compact || processing) && (
+        <p
+          className="text-muted-foreground flex items-center gap-1.5 border-t px-3 py-1.5 text-xs"
+          role={processing ? 'status' : undefined}
+        >
+          {processing && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
+          {processing ? t('form.processing') : t('editor.hint')}
+        </p>
+      )}
 
       <input
         ref={inputRef}

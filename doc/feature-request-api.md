@@ -88,6 +88,7 @@ Authorization: Bearer <accessToken>
 | `priority` | `high` / `medium` / `low` | |
 | `status` | `new` / `accepted` / `in_progress` / `done` / `rejected` | |
 | `q` | Chuỗi | Tìm trong mã và tiêu đề; `%`, `_` là ký tự thường |
+| `mine` | `assigned` / `reported` / `commented` | "Của tôi", so với người gọi (token): `assignee` là tôi · `requester` là tôi hoặc tôi tạo (`created_by`) · tôi đã bình luận. Giá trị khác bị bỏ qua |
 | `sort_by` | `code` / `title` / `priority` / `status` / `created_at` | Mặc định mới nhất trước |
 | `sort_dir` | `asc` / `desc` | |
 
@@ -121,7 +122,7 @@ Giá trị lọc sai bị bỏ qua. Không phân trang.
 }
 ```
 
-**Gợi ý FE:** như danh sách bug, tải một lần không lọc rồi lọc ở client. Mặc định ẩn `done` và `rejected`, có nút "Hiện tất cả" (đặc tả mục 6).
+**FE:** như danh sách bug, mọi bộ lọc và ô tìm kiếm gửi thẳng lên các tham số trên (`q` debounce), FE không tự lọc. Mặc định ẩn `done` và `rejected`, có nút "Hiện tất cả" (đặc tả mục 6).
 
 ---
 
@@ -277,7 +278,13 @@ Content-Type: application/json
 { "otp": "123456" }
 ```
 
-**Response 200:** `{ "success": true }`. Xoá hẳn đề xuất, lịch sử và file. Mã đã cấp không được dùng lại.
+**Response 200:** `{ "success": true }`. Xoá hẳn đề xuất, lịch sử, file và bình luận. Mã đã cấp không được dùng lại.
+
+---
+
+## 8b. Bình luận — `POST ?c=Feature&m=addComment|updateComment|deleteComment` (từ 12/11/2026)
+
+Giống hệt bình luận của bug (mục 6.14 của `debugging-system-api.md`), chỉ đổi `c=Bug` → `c=Feature` và `code=FF-F003`. Không cần OTP. Response trả đề xuất kèm `comments`; `Feature.comments` chỉ có ở `show` và các endpoint ghi. File lưu ở `upload/features/<DỰ ÁN>/<MÃ>/comments/`.
 
 ---
 

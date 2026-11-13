@@ -2,6 +2,10 @@ export const PLATFORMS = ['backend', 'frontend', 'mobile', 'windows'] as const
 export const SEVERITIES = ['critical', 'high', 'medium', 'low'] as const
 export const STATUSES = ['new', 'fixing', 'fixed', 'closed'] as const
 
+/** Bộ lọc nhanh "Của tôi": được giao · tôi báo/tạo · tôi đã bình luận (server lọc, `?mine=`) */
+export const MINE = ['assigned', 'reported', 'commented'] as const
+export type Mine = (typeof MINE)[number]
+
 export type Platform = (typeof PLATFORMS)[number]
 export type Severity = (typeof SEVERITIES)[number]
 export type Status = (typeof STATUSES)[number]
@@ -53,6 +57,8 @@ export interface Bug {
   severity: Severity
   /** isCore || severity === 'critical' (backend tính) */
   mustFix: boolean
+  /** mustFix và chưa Đóng → đang chặn release (backend tính) */
+  blocksRelease: boolean
   /** Rich text HTML: bước tái tạo, kết quả, ảnh/video/tệp đính kèm */
   content: string
   reporter: string
@@ -60,6 +66,40 @@ export interface Bug {
   status: Status
   createdAt: string
   history: BugHistory[]
+  /** Chỉ có ở chi tiết (show), danh sách không kèm */
+  comments?: Comment[]
+  /** Có cả ở danh sách: hiện 💬 N và chấm "mới" */
+  commentCount: number
+  lastComment: LastComment | null
+}
+
+/** Bình luận mới nhất (tóm tắt trong danh sách / Kanban) */
+export interface LastComment {
+  author: string
+  createdAt: string
+  /** Người đang đăng nhập viết → không tính là "mới" */
+  mine: boolean
+}
+
+/** Bình luận của bug / đề xuất tính năng */
+export interface Comment {
+  id: number
+  /** Rich text HTML (cùng dạng `content` của bug) */
+  content: string
+  author: string
+  authorId: string | null
+  createdAt: string
+  updatedAt: string
+  /** Người đang đăng nhập là tác giả → được sửa/xoá (backend tính) */
+  mine: boolean
+}
+
+export type CommentKind = 'bug' | 'feature'
+
+/** Nội dung rich text gửi lên: HTML (file mới là `upload:N`) + file theo N */
+export interface RichInput {
+  content: string
+  files: UploadFile[]
 }
 
 export interface BugInput {
@@ -116,7 +156,14 @@ export interface Feature {
   assignee: string | null
   createdAt: string
   history: FeatureHistory[]
+  /** Chỉ có ở chi tiết (show), danh sách không kèm */
+  comments?: Comment[]
+  commentCount: number
+  lastComment: LastComment | null
 }
+
+/** Một dòng của bảng gộp (Item@index): bug hoặc đề xuất tính năng */
+export type ItemRow = { kind: 'bug'; data: Bug } | { kind: 'feature'; data: Feature }
 
 export interface FeatureInput {
   projectId?: number

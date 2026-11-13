@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import type { BugQuery } from '@/services/api'
+import { useDebounced } from '@/hooks/use-debounced'
+import type { BugQuery, FeatureQuery, ItemQuery } from '@/services/api'
 import {
   FEATURE_STATUSES,
+  MINE,
   PLATFORMS,
   PRIORITIES,
   SEVERITIES,
   STATUSES,
-  type Feature,
   type FeatureStatus,
+  type Mine,
   type Platform,
   type Priority,
   type Severity,
@@ -25,15 +26,16 @@ export type ItemType = (typeof ITEM_TYPES)[number]
  * Tham số lọc trên URL. Bug và đề xuất có bộ giá trị khác nhau nên tách tham số:
  * severity/status/core chỉ áp cho bug, priority/fstatus chỉ áp cho đề xuất.
  */
-export const FILTER_PARAMS = ['type', 'platform', 'core', 'severity', 'priority', 'status', 'fstatus'] as const
+export const FILTER_PARAMS = ['mine', 'type', 'platform', 'core', 'severity', 'priority', 'status', 'fstatus'] as const
 export type FilterParam = (typeof FILTER_PARAMS)[number]
 const BUG_ONLY: FilterParam[] = ['core', 'severity', 'status']
 const FEATURE_ONLY: FilterParam[] = ['priority', 'fstatus']
 
 /** Cột / nút lọc trên giao diện; `level` và `status` gom 2 tham số (bug | đề xuất) vào một cột */
-export const FILTER_FIELDS = ['type', 'platform', 'core', 'level', 'status'] as const
+export const FILTER_FIELDS = ['mine', 'type', 'platform', 'core', 'level', 'status'] as const
 export type FilterField = (typeof FILTER_FIELDS)[number]
 export const FIELD_PARAMS: Record<FilterField, FilterParam[]> = {
+  mine: ['mine'],
   type: ['type'],
   platform: ['platform'],
   core: ['core'],
@@ -44,18 +46,10 @@ export const FIELD_PARAMS: Record<FilterField, FilterParam[]> = {
 const pick = <T extends string>(v: string | null, allowed: readonly T[]) =>
   v && (allowed as readonly string[]).includes(v) ? (v as T) : undefined
 
-function useDebounced<T>(value: T, ms = 300) {
-  const [v, setV] = useState(value)
-  useEffect(() => {
-    const id = setTimeout(() => setV(value), ms)
-    return () => clearTimeout(id)
-  }, [value, ms])
-  return v
-}
-
 export function readFilters(params: URLSearchParams) {
   return {
     q: params.get('q') ?? '',
+    mine: pick<Mine>(params.get('mine'), MINE),
     type: pick<ItemType>(params.get('type'), ITEM_TYPES),
     platform: pick<Platform>(params.get('platform'), PLATFORMS),
     core: pick(params.get('core'), ['yes', 'no'] as const),
@@ -107,12 +101,36 @@ export function useItemFilters() {
   return { filters, setFilter, setField, clear, isActive }
 }
 
-/** Bộ lọc có loại trừ hẳn bug / đề xuất không (vd. lọc theo "Mức độ mong muốn" thì chỉ còn đề xuất) */
-export function scopeOf(f: ItemFilters, ignore: FilterParam[] = []) {
-  const on = (k: FilterParam) => !ignore.includes(k) && !!f[k]
+/** Cột sắp xếp của bảng gộp → `sort_by` của Item@index */
+const ITEM_SORT = { code: 'code', level: 'level', status: 'status', createdAt: 'created_at' } as const
+
+/**
+ * Tham số gửi lên Item@index (bảng gộp): server lọc, sắp xếp, phân trang. Lọc theo tham số chỉ-bug / chỉ-đề xuất
+ * thì server tự bỏ loại còn lại. `page` bắt đầu từ 0 như bảng.
+ */
+export function useItemQuery(
+  f: ItemFilters,
+  project: string | undefined,
+  sorting: { id: string; desc: boolean }[],
+  page: number,
+): ItemQuery {
+  const q = useDebounced(f.q)
+  const sort = sorting[0]
   return {
-    bugs: f.type !== 'feature' && !FEATURE_ONLY.some(on),
-    features: f.type !== 'bug' && !BUG_ONLY.some(on),
+    project,
+    q,
+    mine: f.mine,
+    type: f.type,
+    platform: f.platform,
+    core: f.core,
+    severity: f.severity,
+    status: f.status,
+    priority: f.priority,
+    fstatus: f.fstatus,
+    sortBy: sort && ITEM_SORT[sort.id as keyof typeof ITEM_SORT],
+    sortDir: sort && (sort.desc ? 'desc' : 'asc'),
+    page: page + 1,
+    perPage: PAGE_SIZE,
   }
 }
 
@@ -123,6 +141,7 @@ export function useBugQuery(f: ItemFilters, project: string | undefined, ignore:
   return {
     project,
     q,
+    mine: on('mine'),
     platform: on('platform'),
     core: on('core'),
     severity: on('severity'),
@@ -130,14 +149,16 @@ export function useBugQuery(f: ItemFilters, project: string | undefined, ignore:
   }
 }
 
-/** Đề xuất tải hết theo dự án, lọc ở client */
-export function matchFeature(f: ItemFilters, item: Feature, ignore: FilterParam[] = []) {
-  const on = (k: FilterParam) => !ignore.includes(k) && f[k]
-  const q = f.q.trim().toLowerCase()
-  return (
-    (!q || item.code.toLowerCase().includes(q) || item.title.toLowerCase().includes(q)) &&
-    (!on('platform') || item.platform.includes(f.platform!)) &&
-    (!on('priority') || item.priority === f.priority) &&
-    (!on('fstatus') || item.status === f.fstatus)
-  )
+/** Tham số gửi lên Feature@index — đề xuất cũng lọc/tìm ở server như bug */
+export function useFeatureQuery(f: ItemFilters, project: string | undefined, ignore: FilterParam[] = []): FeatureQuery {
+  const q = useDebounced(f.q)
+  const on = <K extends FilterParam>(k: K) => (ignore.includes(k) ? undefined : f[k])
+  return {
+    project,
+    q,
+    mine: on('mine'),
+    platform: on('platform'),
+    priority: on('priority'),
+    status: on('fstatus'),
+  }
 }

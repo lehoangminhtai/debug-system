@@ -1,12 +1,4 @@
-import {
-  flexRender,
-  getCoreRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  useReactTable,
-  type ColumnDef,
-  type SortingState,
-} from '@tanstack/react-table'
+import { flexRender, getCoreRowModel, useReactTable, type ColumnDef, type SortingState } from '@tanstack/react-table'
 import { ArrowDown, ArrowUp, ArrowUpDown, ShieldAlert } from 'lucide-react'
 import { useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -18,30 +10,20 @@ import {
   StatusBadge,
   TypeBadge,
 } from '@/components/common/badges'
+import { CommentBadge } from '@/components/common/comment-badge'
 import { TruncateTip } from '@/components/common/truncate-tip'
 import { UserName } from '@/components/common/user-avatar'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { FROM_LIST } from '@/features/bugs/hooks/use-scope'
 import { useI18n } from '@/i18n'
 import { cn, formatTs } from '@/lib/utils'
-import { FEATURE_STATUSES, PRIORITIES, SEVERITIES, STATUSES, type Bug, type Feature } from '@/types'
-import { PAGE_SIZE, type FilterField } from '../hooks/use-item-filters'
+import type { ItemRow } from '@/types'
+import type { FilterField } from '../hooks/use-item-filters'
 import { ColumnFilter } from './item-filters'
 
-/** Một dòng của bảng gộp: bug hoặc đề xuất tính năng */
-export type ItemRow = { kind: 'bug'; data: Bug } | { kind: 'feature'; data: Feature }
-
-export const itemHref = (r: ItemRow) => `/${r.kind === 'bug' ? 'bugs' : 'features'}/${r.data.code}`
-const isMustFix = (r: ItemRow) => r.kind === 'bug' && r.data.mustFix && r.data.status !== 'closed'
-
-// Mức độ: bug Nghiêm trọng(0) → Thấp(3); đề xuất Cần gấp ~ Cao(1) → Có thì tốt ~ Thấp(3) để sắp xếp chung
-const levelRank = (r: ItemRow) =>
-  r.kind === 'bug' ? SEVERITIES.indexOf(r.data.severity) : PRIORITIES.indexOf(r.data.priority) + 1
-// Trạng thái: theo thứ tự quy trình của từng loại, chia về 0..1 để hai loại xen kẽ hợp lý
-const statusRank = (r: ItemRow) =>
-  r.kind === 'bug'
-    ? STATUSES.indexOf(r.data.status) / (STATUSES.length - 1)
-    : FEATURE_STATUSES.indexOf(r.data.status) / (FEATURE_STATUSES.length - 1)
+const itemHref = (r: ItemRow) => `/${r.kind === 'bug' ? 'bugs' : 'features'}/${r.data.code}`
+/** Bug bắt buộc sửa chưa Đóng (server tính `blocksRelease`) */
+const blocksRelease = (r: ItemRow) => r.kind === 'bug' && r.data.blocksRelease
 
 function LevelBadge({ row }: { row: ItemRow }) {
   return row.kind === 'bug' ? (
@@ -49,6 +31,9 @@ function LevelBadge({ row }: { row: ItemRow }) {
   ) : (
     <PriorityBadge priority={row.data.priority} />
   )
+}
+function ItemComments({ row }: { row: ItemRow }) {
+  return <CommentBadge kind={row.kind} code={row.data.code} count={row.data.commentCount} last={row.data.lastComment} />
 }
 function ItemStatusBadge({ row }: { row: ItemRow }) {
   return row.kind === 'bug' ? <StatusBadge status={row.data.status} /> : <FeatureStatusBadge status={row.data.status} />
@@ -66,14 +51,14 @@ const FILTER_COLUMNS: Partial<Record<string, FilterField>> = {
 const cellVisibility = (id: string) => (WIDE_ONLY.has(id) ? 'hidden xl:table-cell' : undefined)
 
 interface Props {
+  /** Một trang đã lọc + sắp xếp ở server (Item@index) */
   rows: ItemRow[]
-  pageIndex: number
-  /** Sắp xếp ở client (gộp 2 nguồn) */
+  /** Chỉ là trạng thái nút sắp xếp — gửi lên server, bảng không tự sắp */
   sorting: SortingState
   onSortingChange: (s: SortingState) => void
 }
 
-export function ItemTable({ rows, pageIndex, sorting, onSortingChange }: Props) {
+export function ItemTable({ rows, sorting, onSortingChange }: Props) {
   const { t } = useI18n()
   const navigate = useNavigate()
 
@@ -83,11 +68,10 @@ export function ItemTable({ rows, pageIndex, sorting, onSortingChange }: Props) 
         id: 'code',
         header: t('field.code'),
         accessorFn: (r) => r.data.code,
-        sortingFn: (a, b) => a.original.data.code.localeCompare(b.original.data.code, undefined, { numeric: true }),
         cell: ({ row }) => (
           <span className="inline-flex items-center gap-1.5">
             <span className="font-mono text-xs font-medium">{row.original.data.code}</span>
-            {isMustFix(row.original) && (
+            {blocksRelease(row.original) && (
               <ShieldAlert
                 className="text-destructive-text size-3.5"
                 role="img"
@@ -113,15 +97,18 @@ export function ItemTable({ rows, pageIndex, sorting, onSortingChange }: Props) 
         accessorFn: (r) => r.data.title,
         enableSorting: false,
         cell: ({ row }) => (
-          <TruncateTip label={row.original.data.title}>
-            <Link
-              to={itemHref(row.original)}
-              state={FROM_LIST}
-              className="focus-visible:ring-ring text-primary hover:text-primary-hover block truncate font-medium underline underline-offset-2 focus-visible:rounded-sm focus-visible:ring-2 focus-visible:outline-none"
-            >
-              {row.original.data.title || t('common.untitled')}
-            </Link>
-          </TruncateTip>
+          <span className="flex min-w-0 items-center gap-2">
+            <TruncateTip label={row.original.data.title}>
+              <Link
+                to={itemHref(row.original)}
+                state={FROM_LIST}
+                className="focus-visible:ring-ring text-primary hover:text-primary-hover block min-w-0 truncate font-medium underline underline-offset-2 focus-visible:rounded-sm focus-visible:ring-2 focus-visible:outline-none"
+              >
+                {row.original.data.title || t('common.untitled')}
+              </Link>
+            </TruncateTip>
+            <ItemComments row={row.original} />
+          </span>
         ),
       },
       {
@@ -138,14 +125,14 @@ export function ItemTable({ rows, pageIndex, sorting, onSortingChange }: Props) 
       {
         id: 'level',
         header: t('field.severity'),
-        accessorFn: levelRank,
+        accessorFn: (r) => (r.kind === 'bug' ? r.data.severity : r.data.priority),
         sortDescFirst: false, // bấm lần đầu: Nghiêm trọng / Cần gấp lên trước
         cell: ({ row }) => <LevelBadge row={row.original} />,
       },
       {
         id: 'status',
         header: t('field.status'),
-        accessorFn: statusRank,
+        accessorFn: (r) => r.data.status,
         sortDescFirst: false,
         cell: ({ row }) => <ItemStatusBadge row={row.original} />,
       },
@@ -182,16 +169,15 @@ export function ItemTable({ rows, pageIndex, sorting, onSortingChange }: Props) 
     data: rows,
     columns,
     getRowId: (r) => `${r.kind}-${r.data.id}`,
-    state: { sorting, pagination: { pageIndex, pageSize: PAGE_SIZE } },
+    state: { sorting },
+    manualSorting: true, // server sắp xếp + phân trang (Item@index)
     onSortingChange: (u) => onSortingChange(typeof u === 'function' ? u(sorting) : u),
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
   })
 
   return (
     <div className="flex flex-col gap-3">
-      {/* < 768px: danh sách thẻ — cùng row model nên sắp xếp/phân trang đồng bộ với bảng */}
+      {/* < 768px: danh sách thẻ — cùng trang dữ liệu với bảng */}
       <ul className="bg-card divide-y rounded-lg border md:hidden" aria-label={t('table.itemCaption')}>
         {table.getRowModel().rows.map(({ id, original: r }) => (
           <li key={id}>
@@ -202,7 +188,7 @@ export function ItemTable({ rows, pageIndex, sorting, onSortingChange }: Props) 
             >
               <span className="flex items-center gap-1.5">
                 <span className="font-mono text-xs font-medium">{r.data.code}</span>
-                {isMustFix(r) && (
+                {blocksRelease(r) && (
                   <ShieldAlert
                     className="text-destructive-text size-3.5"
                     role="img"
@@ -212,8 +198,11 @@ export function ItemTable({ rows, pageIndex, sorting, onSortingChange }: Props) 
                 <TypeBadge kind={r.kind} />
                 <span className="text-muted-foreground ml-auto text-xs">{formatTs(r.data.createdAt)}</span>
               </span>
-              <span className="line-clamp-2 text-sm font-medium break-words">
-                {r.data.title || t('common.untitled')}
+              <span className="flex items-start gap-2">
+                <span className="line-clamp-2 min-w-0 flex-1 text-sm font-medium break-words">
+                  {r.data.title || t('common.untitled')}
+                </span>
+                <ItemComments row={r} />
               </span>
               <span className="flex flex-wrap items-center gap-1.5">
                 <ItemStatusBadge row={r} />

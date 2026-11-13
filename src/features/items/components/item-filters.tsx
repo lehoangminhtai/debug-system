@@ -14,7 +14,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
-import { FEATURE_STATUSES, PLATFORMS, PRIORITIES, SEVERITIES, STATUSES } from '@/types'
+import { FEATURE_STATUSES, MINE, PLATFORMS, PRIORITIES, SEVERITIES, STATUSES } from '@/types'
 import {
   FIELD_PARAMS,
   useItemFilters,
@@ -35,6 +35,11 @@ function useFieldDefs(): Record<FilterField, FieldDef> {
   const opts = (param: FilterParam, values: readonly string[], label: (v: string) => string) =>
     values.map((value) => ({ param, value, label: label(value) }))
   return {
+    mine: {
+      label: t('filter.mine'),
+      all: t('filter.everyone'),
+      groups: [{ options: opts('mine', MINE, (v) => t(`mine.${v as (typeof MINE)[number]}`)) }],
+    },
     type: {
       label: t('field.type'),
       all: t('filter.allTypes'),

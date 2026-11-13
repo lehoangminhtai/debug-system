@@ -121,7 +121,7 @@ export function ScopeLayout() {
           {project && <p className="text-muted-foreground mt-1 max-w-2xl text-sm">{project.description}</p>}
           {projects.isSuccess && (
             <div className="mt-2.5">
-              <ReleaseStatus project={project} projects={ctx.projects} />
+              <ReleaseStatus project={project} />
             </div>
           )}
         </div>

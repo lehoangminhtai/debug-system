@@ -3,8 +3,10 @@ import { Popover } from 'radix-ui'
 import { useState, type ComponentProps } from 'react'
 import { Pill } from '@/components/common/badges'
 import { UserName } from '@/components/common/user-avatar'
+import { useDebounced } from '@/hooks/use-debounced'
 import { useI18n } from '@/i18n'
 import type { Person } from '@/services/api'
+import { useUserSearch } from '@/services/queries'
 import { cn } from '@/lib/utils'
 
 interface Props extends Omit<ComponentProps<'button'>, 'value' | 'onChange'> {
@@ -24,14 +26,21 @@ function EmployeeId({ id }: { id: string }) {
   )
 }
 
-/** Ô chọn người: chiều cao danh sách cố định (cuộn), có ô tìm kiếm ở trên */
+/**
+ * Ô chọn người: chiều cao danh sách cố định (cuộn), có ô tìm kiếm ở trên.
+ * Chưa gõ → `people` (danh bạ + tên cũ); gõ → server tìm (User@index?q=, debounce).
+ */
 export function PersonSelect({ value, onValueChange, people, none, placeholder, className, ...rest }: Props) {
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
-  const needle = q.trim().toLowerCase()
-  const matches = people.filter((p) => `${p.name} ${p.employeeId ?? ''}`.toLowerCase().includes(needle))
-  const showNone = none && (!needle || none.label.toLowerCase().includes(needle))
+  const needle = q.trim()
+  const debounced = useDebounced(needle)
+  const search = useUserSearch(open ? debounced : '')
+  const matches = needle ? (search.data ?? []) : people
+  const searching = !!needle && (needle !== debounced || search.isFetching)
+  // "Chưa giao" là lựa chọn của giao diện, không phải dữ liệu → chỉ hiện khi chưa tìm
+  const showNone = none && !needle
   const pick = (v: string) => {
     onValueChange(v)
     setOpen(false)
@@ -66,6 +75,8 @@ export function PersonSelect({ value, onValueChange, people, none, placeholder, 
           type="button"
           role="combobox"
           aria-expanded={open}
+          // Ô hẹp mà tên dài vẫn xem được đầy đủ khi rê chuột
+          title={currentPerson?.employeeId ? `${current} · ${currentPerson.employeeId}` : current || undefined}
           className={cn(
             'border-input bg-card focus-visible:ring-ring aria-invalid:border-destructive flex h-9 w-full items-center justify-between gap-2 rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50',
             className,
@@ -87,7 +98,8 @@ export function PersonSelect({ value, onValueChange, people, none, placeholder, 
         <Popover.Content
           align="start"
           sideOffset={4}
-          className="bg-popover text-popover-foreground z-50 w-(--radix-popover-trigger-width) min-w-48 rounded-md border shadow-md"
+          // Rộng theo tên dài nhất (không hẹp hơn ô chọn), tối đa 28rem và không tràn màn hình
+          className="bg-popover text-popover-foreground z-50 w-max max-w-[min(28rem,calc(100vw-2rem))] min-w-[max(12rem,var(--radix-popover-trigger-width))] rounded-md border shadow-md"
         >
           <div className="flex items-center gap-2 border-b px-3">
             <Search className="text-muted-foreground size-4 shrink-0" aria-hidden />
@@ -112,7 +124,9 @@ export function PersonSelect({ value, onValueChange, people, none, placeholder, 
               ),
             )}
             {!showNone && !matches.length && (
-              <p className="text-muted-foreground px-2 py-3 text-center text-sm">{t('common.noResults')}</p>
+              <p className="text-muted-foreground px-2 py-3 text-center text-sm" aria-live="polite">
+                {searching ? t('common.loading') : search.isError ? t('error.iam_unavailable') : t('common.noResults')}
+              </p>
             )}
           </div>
         </Popover.Content>

@@ -4,8 +4,6 @@ import {
   ArrowLeft,
   Calendar,
   FolderKanban,
-  History,
-  Info,
   ListOrdered,
   Loader2,
   MonitorSmartphone,
@@ -14,31 +12,31 @@ import {
   Target,
   User,
   Wrench,
-  type LucideIcon,
 } from 'lucide-react'
-import type { ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { NotFoundPage } from '@/app/not-found-page'
 import { Breadcrumb } from '@/components/common/breadcrumb'
 import { CoreBadge, MustFixBadge, Pill, PlatformBadge, SeverityBadge, StatusBadge } from '@/components/common/badges'
+import { CommentSection } from '@/components/common/comment-section'
+import { InfoBar, InfoItem } from '@/components/common/info-bar'
 import { PersonSelect } from '@/components/common/person-select'
 import { OtpDeleteButton } from '@/components/common/otp-dialog'
+import { ProgressTimeline } from '@/components/common/progress-timeline'
+import { RichContentView } from '@/components/common/rich-text'
 import { Section } from '@/components/common/section'
 import { ErrorState } from '@/components/common/states'
 import { UserName } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useDocumentTitle } from '@/hooks/use-document-title'
 import { useI18n, type TKey } from '@/i18n'
+import { statusRank } from '@/lib/rules'
 import { ApiError } from '@/services/api'
 import { useAssign, useBug, useChangeStatus, useDeleteBug, usePeople, useProjects } from '@/services/queries'
 import { STATUSES, type Bug, type Status } from '@/types'
-import { HistoryList } from '../components/history-list'
-import { RichContentView } from '@/components/common/rich-text'
-import { StatusStepper } from '../components/status-stepper'
+import { HistoryButton } from '../components/history-button'
 import { FROM_LIST } from '../hooks/use-scope'
 
 const UNASSIGNED = '__none'
@@ -52,16 +50,6 @@ const NEXT: Record<Status, { to: Status; label: TKey; secondary?: boolean }[]> =
     { to: 'closed', label: 'detail.close' },
   ],
   closed: [{ to: 'fixing', label: 'detail.reopen', secondary: true }],
-}
-
-/** Nhãn có icon đứng trước */
-function IconLabel({ icon: Icon, children }: { icon: LucideIcon; children: ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <Icon className="size-4 shrink-0" aria-hidden />
-      {children}
-    </span>
-  )
 }
 
 function DeleteBugButton({ bug, projectKey }: { bug: Bug; projectKey?: string }) {
@@ -90,21 +78,26 @@ function DetailSkeleton() {
     <div className="flex flex-col gap-4" aria-label={t('common.loading')}>
       <Skeleton className="h-4 w-40" />
       <Skeleton className="h-7 w-2/3" />
-      <Skeleton className="h-24 rounded-lg" />
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-        <Skeleton className="h-80 rounded-lg" />
-        <Skeleton className="h-80 rounded-lg" />
+      <Skeleton className="h-14 rounded-lg" />
+      <Skeleton className="h-20 rounded-lg" />
+      <div className="grid gap-4 xl:grid-cols-12">
+        <Skeleton className="h-80 rounded-lg xl:col-span-8" />
+        <Skeleton className="h-80 rounded-lg xl:col-span-4" />
       </div>
     </div>
   )
 }
 
+/**
+ * Bố cục: tiêu đề → thanh tiến trình gọn (nút chuyển trạng thái, Sửa, Xoá, 🕘 Lịch sử) → dải Thông tin nằm ngang →
+ * Mô tả (8/12) | Bình luận (4/12, dính khi cuộn). Dưới xl (cột 4/12 quá hẹp vì có sidebar): xếp dọc.
+ */
 export function BugDetailPage() {
   const { code = '' } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
   const { t } = useI18n()
-  const bugQuery = useBug(code)
+  const bugQuery = useBug(code, true, true)
   const projects = useProjects()
   const changeStatus = useChangeStatus()
   const assign = useAssign()
@@ -114,9 +107,11 @@ export function BugDetailPage() {
 
   if (bugQuery.isPending) return <DetailSkeleton />
   if (bugQuery.isError) {
+    // Bị xoá (kể cả lúc đang xem — tải định kỳ phát hiện) → không tìm thấy
     if (bugQuery.error instanceof ApiError && bugQuery.error.code === 'not_found')
       return <NotFoundPage title={t('error.bugNotFound', { code })} />
-    return <ErrorState onRetry={() => bugQuery.refetch()} className="py-24" titleAs="h1" />
+    // Lỗi khi tải lại định kỳ (mạng chập chờn) mà đã có dữ liệu → giữ trang, lần sau tự thử lại
+    if (!bug) return <ErrorState onRetry={() => bugQuery.refetch()} className="py-24" titleAs="h1" />
   }
   if (!bug) return null
 
@@ -126,6 +121,7 @@ export function BugDetailPage() {
   const goBack = () => ((location.state as typeof FROM_LIST | null)?.fromList ? navigate(-1) : navigate(listUrl))
   const busy = changeStatus.isPending || assign.isPending
   const mustFix = bug.mustFix
+  const current = statusRank(bug.status)
 
   const setStatus = (status: Status) =>
     changeStatus.mutate(
@@ -147,14 +143,8 @@ export function BugDetailPage() {
     )
   }
 
-  const handling = mustFix
-    ? t('handling.mustFix')
-    : bug.severity === 'low'
-      ? t('handling.later')
-      : t('handling.whenPossible')
-
   return (
-    <article className="flex flex-col gap-5">
+    <article className="flex flex-col gap-4">
       {/* Tiêu đề */}
       <header className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -182,147 +172,118 @@ export function BugDetailPage() {
         </div>
       </header>
 
-      {/* Tiến trình — Sửa / Xóa nằm cùng hàng với các nút chuyển trạng thái */}
-      <Section
-        id="progress"
-        icon={Activity}
-        title={t('detail.progress')}
-        action={
-          <div className="flex shrink-0 flex-wrap justify-end gap-2">
-            {NEXT[bug.status].map((a) => (
-              <Button
-                key={a.label}
-                size="sm"
-                variant={a.secondary ? 'outline' : 'default'}
-                disabled={busy}
-                aria-busy={busy}
-                onClick={() => setStatus(a.to)}
-              >
-                {a.secondary && <RotateCcw aria-hidden />}
-                {t(a.label)}
-              </Button>
-            ))}
-            <Button asChild variant="outline" size="sm">
-              <Link to={`/bugs/${bug.code}/edit`}>
-                <Pencil aria-hidden />
-                {t('action.edit')}
-              </Link>
-            </Button>
-            <DeleteBugButton bug={bug} projectKey={project?.key} />
-          </div>
-        }
+      {/* Tiến trình gọn một dòng + hành động. Màn hẹp: hành động xuống dòng dưới */}
+      <section
+        aria-labelledby="progress-title"
+        className="bg-card flex flex-col gap-3 rounded-lg border px-4 py-3 md:flex-row md:items-center md:gap-6"
       >
-        <StatusStepper bug={bug} />
-      </Section>
+        <h2 id="progress-title" className="sr-only">
+          {t('detail.progress')}
+        </h2>
+        <ProgressTimeline
+          label={t('detail.progress')}
+          current={current}
+          steps={STATUSES.map((s, i) => {
+            const entry = i <= current ? bug.history.findLast((h) => h.status === s) : undefined
+            return { key: s, label: t(`status.${s}`), entry }
+          })}
+        />
+        <div className="flex flex-wrap items-center gap-2 md:shrink-0 md:justify-end">
+          {NEXT[bug.status].map((a) => (
+            <Button
+              key={a.label}
+              size="sm"
+              variant={a.secondary ? 'outline' : 'default'}
+              disabled={busy}
+              aria-busy={busy}
+              onClick={() => setStatus(a.to)}
+            >
+              {a.secondary && <RotateCcw aria-hidden />}
+              {t(a.label)}
+            </Button>
+          ))}
+          <Button asChild variant="outline" size="sm">
+            <Link to={`/bugs/${bug.code}/edit`}>
+              <Pencil aria-hidden />
+              {t('action.edit')}
+            </Link>
+          </Button>
+          <DeleteBugButton bug={bug} projectKey={project?.key} />
+          <HistoryButton history={bug.history} />
+        </div>
+      </section>
 
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-        {/* Nội dung tái tạo */}
-        <div className="flex flex-col gap-5">
+      {/* Thông tin nằm ngang */}
+      <InfoBar title={t('detail.info')}>
+        <InfoItem
+          icon={Activity}
+          htmlFor="detail-status"
+          label={
+            <>
+              {t('field.status')}
+              {busy && <Loader2 className="size-3 animate-spin" aria-label={t('common.saving')} />}
+            </>
+          }
+        >
+          <Select value={bug.status} onValueChange={(v) => setStatus(v as Status)} disabled={busy}>
+            <SelectTrigger id="detail-status" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUSES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  <StatusBadge status={s} />
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </InfoItem>
+        {/* Vừa đủ tên + mã nhân viên (không chia đều như các ô khác) */}
+        <InfoItem icon={Wrench} htmlFor="detail-assignee" label={t('field.assignee')} className="flex-none">
+          <PersonSelect
+            id="detail-assignee"
+            className="w-auto max-w-full min-w-36"
+            value={bug.assignee ?? UNASSIGNED}
+            onValueChange={setAssignee}
+            disabled={busy}
+            people={people}
+            none={{ value: UNASSIGNED, label: t('table.unassigned') }}
+          />
+        </InfoItem>
+        <InfoItem icon={FolderKanban} label={t('field.project')}>
+          <span className="truncate font-medium">{project?.name ?? t('common.none')}</span>
+        </InfoItem>
+        <InfoItem icon={User} label={t('field.reporter')}>
+          <UserName name={bug.reporter} fallback={t('common.none')} />
+        </InfoItem>
+        <InfoItem icon={Calendar} label={t('field.createdAt')}>
+          <time dateTime={bug.createdAt} className="tabular-nums">
+            {formatTs(bug.createdAt)}
+          </time>
+        </InfoItem>
+        <InfoItem icon={MonitorSmartphone} label={t('field.platform')}>
+          <span className="flex min-w-0 flex-wrap gap-1.5">
+            <PlatformBadge platform={bug.platform} />
+          </span>
+        </InfoItem>
+        <InfoItem icon={Target} label={t('field.core')}>
+          <Pill tone={bug.isCore ? 'primary' : 'neutral'} icon={Target}>
+            {t(bug.isCore ? 'core.yes' : 'core.no')}
+          </Pill>
+        </InfoItem>
+      </InfoBar>
+
+      {/* Mô tả (8/12) | Bình luận (4/12, dính khi cuộn để luôn thấy trao đổi). Dưới xl: xếp dọc */}
+      <div className="grid items-start gap-4 xl:grid-cols-12">
+        <div className="min-w-0 xl:col-span-8">
           <Section id="content" icon={ListOrdered} title={t('field.content')}>
             <RichContentView html={bug.content} empty={t('detail.noContent')} />
           </Section>
         </div>
-
-        {/* Cột phụ */}
-        <aside className="flex flex-col gap-5 lg:self-stretch">
-          <Section id="info" icon={Info} title={t('detail.info')}>
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="detail-status">
-                  <IconLabel icon={Activity}>{t('field.status')}</IconLabel>
-                </Label>
-                <Select value={bug.status} onValueChange={(v) => setStatus(v as Status)} disabled={busy}>
-                  <SelectTrigger id="detail-status" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STATUSES.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        <StatusBadge status={s} />
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="detail-assignee">
-                  <IconLabel icon={Wrench}>{t('field.assignee')}</IconLabel>
-                </Label>
-                <PersonSelect
-                  id="detail-assignee"
-                  value={bug.assignee ?? UNASSIGNED}
-                  onValueChange={setAssignee}
-                  disabled={busy}
-                  people={people}
-                  none={{ value: UNASSIGNED, label: t('table.unassigned') }}
-                />
-              </div>
-              {busy && (
-                <p className="text-muted-foreground flex items-center gap-1.5 text-xs" role="status">
-                  <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                  {t('common.saving')}
-                </p>
-              )}
-            </div>
-
-            <dl className="mt-4 grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-3 border-t pt-4 text-sm">
-              <dt className="text-muted-foreground">
-                <IconLabel icon={FolderKanban}>{t('field.project')}</IconLabel>
-              </dt>
-              <dd className="min-w-0 truncate font-medium">{project?.name ?? t('common.none')}</dd>
-              <dt className="text-muted-foreground">
-                <IconLabel icon={User}>{t('field.reporter')}</IconLabel>
-              </dt>
-              <dd>
-                <UserName name={bug.reporter} fallback={t('common.none')} />
-              </dd>
-              <dt className="text-muted-foreground">
-                <IconLabel icon={Calendar}>{t('field.createdAt')}</IconLabel>
-              </dt>
-              <dd>
-                <time dateTime={bug.createdAt} className="tabular-nums">
-                  {formatTs(bug.createdAt)}
-                </time>
-              </dd>
-              <dt className="text-muted-foreground">
-                <IconLabel icon={MonitorSmartphone}>{t('field.platform')}</IconLabel>
-              </dt>
-              <dd className="flex min-w-0 flex-wrap gap-1.5">
-                <PlatformBadge platform={bug.platform} />
-              </dd>
-              <dt className="text-muted-foreground">
-                <IconLabel icon={Target}>{t('field.core')}</IconLabel>
-              </dt>
-              <dd>
-                <Pill tone={bug.isCore ? 'primary' : 'neutral'} icon={Target}>
-                  {t(bug.isCore ? 'core.yes' : 'core.no')}
-                </Pill>
-              </dd>
-              <dt className="text-muted-foreground">
-                <IconLabel icon={Wrench}>{t('field.handling')}</IconLabel>
-              </dt>
-              <dd className="min-w-0">
-                <Pill
-                  tone={mustFix ? 'destructive' : bug.severity === 'low' ? 'neutral' : 'info'}
-                  className="h-auto min-h-5 py-0.5 break-words whitespace-normal"
-                >
-                  {handling}
-                </Pill>
-              </dd>
-            </dl>
-          </Section>
-
-          <Section
-            id="history"
-            icon={History}
-            title={t('detail.history')}
-            className="lg:flex lg:min-h-80 lg:flex-1 lg:flex-col"
-            bodyClassName="lg:relative lg:flex-1"
-          >
-            {/* lg: cao bằng phần còn lại của cột (theo cột trái), tối thiểu 20rem, vượt thì cuộn */}
-            <HistoryList history={bug.history} className="lg:absolute lg:inset-4 lg:max-h-none" />
-          </Section>
-        </aside>
+        <div className="min-w-0 xl:sticky xl:top-18 xl:col-span-4">
+          {/* key theo mã → sang bug khác thì tính lại "đã xem" */}
+          <CommentSection key={bug.code} kind="bug" code={bug.code} comments={bug.comments ?? []} />
+        </div>
       </div>
     </article>
   )

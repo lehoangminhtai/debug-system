@@ -1,22 +1,7 @@
-// Quy tắc nghiệp vụ (spec §2.1, §3.3, §5). Import tương đối để chạy được test bằng node.
-import type { Bug, Severity, Status } from '../types/index.ts'
-import { SEVERITIES, STATUSES } from '../types/index.ts'
+// Quy tắc nghiệp vụ (bắt buộc sửa, chặn release, mã bug…) do backend tính và trả về (mustFix, blocksRelease,
+// Project@releaseStatus) — FE không tự tính lại. Ở đây chỉ còn thứ tự hiển thị.
+import type { Status } from '../types/index.ts'
+import { STATUSES } from '../types/index.ts'
 
-export const PROJECT_KEY_PATTERN = /^[A-Z]{2,4}$/
-
-/** Có ảnh hưởng cốt lõi (bất kỳ mức độ) hoặc Nghiêm trọng → bắt buộc sửa trước release */
-export const isMustFix = (bug: Pick<Bug, 'isCore' | 'severity'>) => bug.isCore || bug.severity === 'critical'
-
-/** Bug bắt buộc sửa chưa Đóng → chặn release */
-export const isBlocking = (bug: Pick<Bug, 'isCore' | 'severity' | 'status'>) =>
-  isMustFix(bug) && bug.status !== 'closed'
-
-export const formatBugCode = (projectKey: string, seq: number) => `${projectKey}-${String(seq).padStart(3, '0')}`
-
-export function releaseStatus<T extends Pick<Bug, 'isCore' | 'severity' | 'status'>>(bugs: T[]) {
-  const blocking = bugs.filter(isBlocking)
-  return { ready: blocking.length === 0, blocking }
-}
-
-export const severityRank = (s: Severity) => SEVERITIES.indexOf(s)
+/** Vị trí trạng thái trên thanh tiến trình */
 export const statusRank = (s: Status) => STATUSES.indexOf(s)

@@ -457,6 +457,7 @@ Tham số lọc (đều tuỳ chọn):
 | `status` | `new` / `fixing` / `fixed` / `closed` | |
 | `severity` | `critical` / `high` / `medium` / `low` | |
 | `q` | Chuỗi bất kỳ | Tìm trong mã và tiêu đề. `%` và `_` là ký tự thường |
+| `mine` | `assigned` / `reported` / `commented` | "Của tôi", so với người gọi (token): `assignee` là tôi · `reporter` là tôi hoặc tôi tạo (`created_by`) · tôi đã bình luận |
 | `sort_by` | `code` / `title` / `severity` / `status` / `created_at` | Mặc định: mới nhất trước |
 | `sort_dir` | `asc` / `desc` | |
 
@@ -499,7 +500,7 @@ Giá trị lọc không hợp lệ bị bỏ qua, không báo lỗi.
 
 ### 6.4. Ô trạng thái release
 
-FE đang tự tính bằng `kS()`: bắt buộc sửa = `isCore || severity === 'critical'`, chặn release khi còn bug bắt buộc sửa có `status !== 'closed'`. Backend dùng **cùng quy tắc**, nên có thể giữ cách tính ở client. Endpoint dưới đây dành cho nơi khác cần kiểm tra mà không tải cả danh sách.
+Server tính, FE chỉ hiển thị: bắt buộc sửa = `isCore || severity === 'critical'`, chặn release khi còn bug bắt buộc sửa có `status !== 'closed'`. Mỗi bug cũng có sẵn `mustFix` và `blocksRelease`.
 
 **Request**
 
@@ -508,7 +509,7 @@ GET /web_develop/dts/backend/?c=Project&m=releaseStatus&key=FF
 Authorization: Bearer <accessToken>
 ```
 
-Bỏ `key` để tính gộp mọi dự án.
+Bỏ `key` để tính gộp mọi dự án: khi đó có thêm `projects` (`key`, `name`, `ready`, `blockingCount` từng dự án), `totalProjects`, `blockedProjects` — FE dùng cho dòng release ở "Tất cả dự án" và số trên sidebar, không tự đếm.
 
 **Response 200**
 
@@ -518,6 +519,7 @@ Bỏ `key` để tính gộp mọi dự án.
   "data": {
     "project": "FF",
     "ready": false,
+    "blockingCount": 3,
     "blocking": [
       { "code": "FF-001", "title": "Crash khi bấm Thanh toán bằng ví", "platform": "mobile",   "isCore": true, "severity": "critical", "status": "fixing", "assignee": "Minh" },
       { "code": "FF-002", "title": "Trừ tiền 2 lần khi mạng chậm",     "platform": "backend",  "isCore": true, "severity": "critical", "status": "fixed",  "assignee": "Hùng" },
@@ -528,6 +530,42 @@ Bỏ `key` để tính gộp mọi dự án.
 ```
 
 **Lỗi:** `404 not_found` khi mã dự án không tồn tại.
+
+---
+
+### 6.4b. Bảng gộp bug + đề xuất (có phân trang)
+
+Màn hình: `/:scope` (bảng chung, cột "Loại"). Server lọc, sắp xếp, phân trang và đếm tổng — FE không tự tính.
+
+```http
+GET /web_develop/dts/backend/?c=Item&m=index&project=FF&mine=assigned&sort_by=level&sort_dir=asc&page=1&per_page=10
+Authorization: Bearer <accessToken>
+```
+
+| Tham số | Giá trị | Ghi chú |
+|---|---|---|
+| `project`, `q`, `mine`, `platform` | như Bug@index | Áp cho cả hai loại |
+| `type` | `bug` / `feature` | Không có → cả hai |
+| `is_core`, `severity`, `status` | như Bug@index | Chỉ bug — có tham số này thì không trả đề xuất |
+| `priority`, `fstatus` | như Feature@index (`status`) | Chỉ đề xuất — có tham số này thì không trả bug |
+| `sort_by` | `code` / `level` / `status` / `created_at` | Mặc định mới nhất trước. `level`: Nghiêm trọng → Thấp, đề xuất Cần gấp đứng cạnh Cao. `status`: theo quy trình từng loại, quy về 0..1 |
+| `sort_dir` | `asc` / `desc` | |
+| `page`, `per_page` | ≥ 1; 1–100 (mặc định 10) | |
+
+**Response 200**
+
+```json
+{
+  "success": true,
+  "data": [
+    { "kind": "bug", "data": { "code": "FF-002", "...": "như Bug@index" } },
+    { "kind": "feature", "data": { "code": "FF-F001", "...": "như Feature@index" } }
+  ],
+  "meta": { "total": 23, "page": 1, "perPage": 10 }
+}
+```
+
+Kanban vẫn dùng Bug@index / Feature@index (cần trọn danh sách) với `sort_by=severity` / `sort_by=priority&sort_dir=asc` — server sắp, FE chỉ chia cột theo trạng thái.
 
 ---
 
@@ -915,6 +953,46 @@ Authorization: Bearer <accessToken>
 - Bug cũ có thể chứa tên không còn trong danh bạ: ô chọn vẫn phải hiển thị được giá trị hiện tại.
 
 **Lỗi:** `502 iam_unavailable` → toast `error.iam_unavailable`. Form vẫn mở được; ô "Người báo" mặc định là `me.name`.
+
+---
+
+### 6.14. Bình luận (từ 12/11/2026)
+
+Dùng chung cho bug và đề xuất: thay `Bug` bằng `Feature`, `FF-001` bằng `FF-F001`. **Không cần OTP**, chỉ cần đăng nhập + POST.
+
+| Endpoint | Query | Body (`multipart/form-data`) |
+|---|---|---|
+| `POST ?c=Bug&m=addComment` | `code` | `content`, `files[N]` |
+| `POST ?c=Bug&m=updateComment` | `code`, `id` (id bình luận) | `content`, `files[N]` — nội dung đầy đủ sau khi sửa |
+| `POST ?c=Bug&m=deleteComment` | `code`, `id` | (trống) |
+
+`content` + `files[N]` theo đúng quy tắc "Nội dung rich text" ở mục 6.6 (lọc HTML, `upload:N`, loại file). Khi sửa: file cũ còn trong HTML thì giữ, file không còn thì bị xoá khỏi đĩa, trỏ tới file của bình luận khác → `422 invalid_media`. File lưu ở `upload/bugs/<DỰ ÁN>/<MÃ>/comments/`.
+
+**Response 200:** cả bug (đề xuất) như `show`, kèm `comments` mới nhất — FE dùng thẳng làm cache chi tiết.
+
+```ts
+interface Comment {
+  id: number;
+  content: string;          // HTML, file là URL công khai như `content` của bug
+  author: string;           // tên người viết, lấy từ token lúc viết
+  authorId: string | null;  // UUID IAM
+  createdAt: string;
+  updatedAt: string;        // khác createdAt = đã sửa
+  mine: boolean;            // người đang gọi là tác giả → được sửa/xoá
+}
+// Bug.comments / Feature.comments: cũ → mới. Chỉ có ở show và các endpoint ghi; index KHÔNG kèm.
+
+// Có ở CẢ index lẫn show (Bug và Feature) — FE hiện 💬 N và chấm "mới" ở danh sách/Kanban:
+commentCount: number;
+lastComment: { author: string; createdAt: string; mine: boolean } | null;  // null = chưa có bình luận
+```
+
+"Đã xem tới đâu" (chấm mới, nhãn MỚI) và trạng thái thu gọn khối bình luận lưu ở localStorage của trình duyệt (`debugs.commentsSeen`, `debugs.commentsCollapsed`), backend không lưu. Bình luận do chính mình viết (`mine`) không tính là mới.
+
+- **Quyền:** chỉ tác giả (`authorId` = UUID trong JWT) sửa/xoá được → người khác nhận `403 forbidden`.
+- **Lỗi:** `404 not_found` (bug hoặc bình luận không có), `403 forbidden`, `422 comment_empty` (không chữ, không ảnh/video), `422 invalid_media`, `422 media_too_large`, `405` khi gọi bằng GET.
+- Xoá bug / đề xuất / dự án thì bình luận và file bình luận cũng bị xoá.
+- Không ghi vào `history`.
 
 ---
 

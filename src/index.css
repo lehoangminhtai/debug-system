@@ -133,6 +133,9 @@
   }
   html {
     -webkit-font-smoothing: antialiased;
+    /* Luôn chừa chỗ cho thanh cuộn: trang chuyển giữa có/không cuộn (thu gọn bình luận, đổi trang…) thì nội dung
+       không nhảy trái/phải. Trình duyệt dùng thanh cuộn nổi (macOS, mobile) thì không chiếm chỗ gì. */
+    scrollbar-gutter: stable;
   }
   body {
     @apply bg-background text-foreground text-base;

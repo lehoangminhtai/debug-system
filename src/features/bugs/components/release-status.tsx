@@ -4,7 +4,7 @@ import { Hint } from '@/components/common/hint'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
-import { useReleaseStatuses } from '@/services/queries'
+import { useReleaseStatus } from '@/services/queries'
 import type { ReleaseStatus as Release } from '@/services/api'
 import type { Project } from '@/types'
 import { FROM_LIST } from '../hooks/use-scope'
@@ -41,12 +41,12 @@ function Line({ ready, title, children }: { ready: boolean; title: string; child
   )
 }
 
-function ProjectRelease({ ready, blocking }: Pick<Release, 'ready' | 'blocking'>) {
+function ProjectRelease({ ready, blocking, blockingCount }: Release) {
   const { t } = useI18n()
   return (
     <Line ready={ready} title={t(ready ? 'release.ready' : 'release.blocked')}>
       <span className="text-muted-foreground">
-        · {ready ? t('release.readyDesc') : t('release.blockedDesc', { n: blocking.length })}
+        · {ready ? t('release.readyDesc') : t('release.blockedDesc', { n: blockingCount })}
       </span>
       {!ready && (
         <ul className="flex flex-wrap gap-1.5">
@@ -68,33 +68,31 @@ function ProjectRelease({ ready, blocking }: Pick<Release, 'ready' | 'blocking'>
   )
 }
 
-function AllRelease({ projects, statuses }: { projects: Project[]; statuses: Release[] }) {
+/** Gộp mọi dự án: server trả sẵn tóm tắt từng dự án và số dự án bị chặn */
+function AllRelease({ ready, projects = [], totalProjects = 0, blockedProjects = 0 }: Release) {
   const { t } = useI18n()
-  const rows = projects.map((p, i) => ({ project: p, ready: statuses[i].ready, blocking: statuses[i].blocking }))
-  const blockedCount = rows.filter((r) => !r.ready).length
-  const ready = blockedCount === 0
   const title = ready
-    ? t('release.allReady', { total: projects.length })
-    : t('release.allBlocked', { n: blockedCount, total: projects.length })
+    ? t('release.allReady', { total: totalProjects })
+    : t('release.allBlocked', { n: blockedProjects, total: totalProjects })
   return (
     <Line ready={ready} title={title}>
       <ul className="flex flex-wrap gap-1.5">
-        {rows.map(({ project, ready: ok, blocking }) => (
-          <li key={project.id}>
+        {projects.map(({ key, name, ready: ok, blockingCount }) => (
+          <li key={key}>
             <Link
-              to={`/${project.key}`}
-              title={ok ? t('release.ready') : t('release.projectBlocked', { n: blocking.length })}
+              to={`/${key}`}
+              title={ok ? t('release.ready') : t('release.projectBlocked', { n: blockingCount })}
               className={cn(chipClass, 'hover:bg-accent')}
             >
-              <span className="text-muted-foreground font-mono">{project.key}</span>
-              {project.name}
+              <span className="text-muted-foreground font-mono">{key}</span>
+              {name}
               {ok ? (
                 <ShieldCheck className="text-success size-3.5" aria-label={t('release.ready')} />
               ) : (
                 <span className="text-destructive-text inline-flex items-center gap-0.5">
                   <ShieldAlert className="size-3.5" aria-hidden />
-                  <span aria-hidden>{blocking.length}</span>
-                  <span className="sr-only">{t('release.projectBlocked', { n: blocking.length })}</span>
+                  <span aria-hidden>{blockingCount}</span>
+                  <span className="sr-only">{t('release.projectBlocked', { n: blockingCount })}</span>
                 </span>
               )}
             </Link>
@@ -105,22 +103,11 @@ function AllRelease({ projects, statuses }: { projects: Project[]; statuses: Rel
   )
 }
 
-interface Props {
-  project: Project | null
-  projects: Project[]
-}
-
-/** Trạng thái release do server tính (Project@releaseStatus) */
-export function ReleaseStatus({ project, projects }: Props) {
-  const keys = project ? [project.key] : projects.map((p) => p.key)
-  const results = useReleaseStatuses(keys)
-  if (results.some((r) => r.isPending)) return <Skeleton className="h-6 w-72" />
+/** Trạng thái release do server tính (Project@releaseStatus) — một lời gọi, có hay không có dự án */
+export function ReleaseStatus({ project }: { project: Project | null }) {
+  const status = useReleaseStatus(project?.key)
+  if (status.isPending) return <Skeleton className="h-6 w-72" />
   // Không có dữ liệu thì không được kết luận "Sẵn sàng release"
-  const statuses = results.map((r) => r.data)
-  if (statuses.some((s) => !s)) return null
-  return project ? (
-    <ProjectRelease {...statuses[0]!} />
-  ) : (
-    <AllRelease projects={projects} statuses={statuses as Release[]} />
-  )
+  if (!status.data) return null
+  return project ? <ProjectRelease {...status.data} /> : <AllRelease {...status.data} />
 }

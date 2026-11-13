@@ -7,56 +7,41 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { TablePager } from '@/features/bugs/components/table-pager'
 import { useScope } from '@/features/bugs/hooks/use-scope'
 import { useI18n } from '@/i18n'
-import { useBugs, useFeatures } from '@/services/queries'
+import { useItems } from '@/services/queries'
 import { ActiveFilters, ColumnFilter, ResultCount, SearchBox } from '../components/item-filters'
-import { ItemTable, type ItemRow } from '../components/item-table'
-import { FILTER_FIELDS, PAGE_SIZE, matchFeature, scopeOf, useBugQuery, useItemFilters } from '../hooks/use-item-filters'
+import { ItemTable } from '../components/item-table'
+import { FILTER_FIELDS, PAGE_SIZE, useItemFilters, useItemQuery } from '../hooks/use-item-filters'
 
 /**
  * /:scope — một bảng chung cho Bug và Tính năng mong muốn, phân biệt bằng cột "Loại" (có bộ lọc).
- * Bug lọc/tìm ở server (Bug@index), đề xuất tải hết theo dự án rồi lọc ở client; sắp xếp chung ở client.
+ * Lọc, tìm, sắp xếp, phân trang và đếm tổng đều ở server (Item@index); FE chỉ hiển thị trang hiện tại.
  */
 export function ItemListPage() {
   const { t } = useI18n()
   const { project, isPending: scopePending, openCreate } = useScope()
   const { filters, clear, isActive } = useItemFilters()
-  const scope = scopeOf(filters)
-
-  const bugQuery = useBugQuery(filters, project?.key)
-  const bugs = useBugs(bugQuery, !scopePending && scope.bugs)
-  const features = useFeatures(project?.key, !scopePending && scope.features)
-
   const [sorting, setSorting] = useState<SortingState>([{ id: 'createdAt', desc: true }])
 
-  const visibleFeatures = scope.features ? (features.data ?? []).filter((f) => matchFeature(filters, f)) : []
-  const rows: ItemRow[] = [
-    ...(scope.bugs ? (bugs.data ?? []) : []).map((data) => ({ kind: 'bug' as const, data })),
-    ...visibleFeatures.map((data) => ({ kind: 'feature' as const, data })),
-  ]
-
-  // Trang hiện tại gắn với bộ lọc + sắp xếp: đổi → về trang đầu; kết quả ít đi → không vượt quá trang cuối
+  // Trang hiện tại gắn với bộ lọc + sắp xếp: đổi → về trang đầu
   const sig = JSON.stringify([filters, sorting])
   const [pageState, setPageState] = useState({ sig, page: 0 })
-  const lastPage = Math.max(0, Math.ceil(rows.length / PAGE_SIZE) - 1)
-  const page = Math.min(pageState.sig === sig ? pageState.page : 0, lastPage)
+  const page = pageState.sig === sig ? pageState.page : 0
 
-  const isPending = scopePending || (scope.bugs && bugs.isPending) || (scope.features && features.isPending)
-  const failed = (scope.bugs && bugs.isError) || (scope.features && features.isError)
+  const items = useItems(useItemQuery(filters, project?.key, sorting, page), !scopePending)
+  const rows = items.data?.items ?? []
+  const total = items.data?.total ?? 0
+  const isPending = scopePending || items.isPending
+  // Dữ liệu ít đi (người khác xoá) → trang hiện tại vượt quá trang cuối: lùi về trang cuối
+  const lastPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1)
+  if (items.data && !items.isPlaceholderData && page > lastPage) setPageState({ sig, page: lastPage })
 
-  if (failed)
-    return (
-      <ErrorState
-        onRetry={() => {
-          if (bugs.isError) void bugs.refetch()
-          if (features.isError) void features.refetch()
-        }}
-      />
-    )
+  if (items.isError && !items.data) return <ErrorState onRetry={() => void items.refetch()} />
 
   return (
     <div className="flex flex-1 flex-col gap-3">
       <div role="search" aria-label={t('filter.label')} className="flex flex-wrap items-center gap-2">
         <SearchBox />
+        <ColumnFilter field="mine" variant="toolbar" />
         {/* Filter nằm ở header bảng; chỉ hiện ở đây khi cột tương ứng không hiển thị */}
         <ColumnFilter field="type" variant="toolbar" className="md:hidden" />
         <ColumnFilter field="platform" variant="toolbar" className="xl:hidden" />
@@ -64,10 +49,10 @@ export function ItemListPage() {
         <ColumnFilter field="core" variant="toolbar" />
         <ColumnFilter field="level" variant="toolbar" className="md:hidden" />
         <ColumnFilter field="status" variant="toolbar" className="md:hidden" />
-        {rows.length > PAGE_SIZE ? (
-          <TablePager page={page} total={rows.length} onPageChange={(p) => setPageState({ sig, page: p })} />
+        {total > PAGE_SIZE ? (
+          <TablePager page={page} total={total} onPageChange={(p) => setPageState({ sig, page: p })} />
         ) : (
-          <ResultCount kind={filters.type ?? 'item'} n={isPending ? undefined : rows.length} />
+          <ResultCount kind={filters.type ?? 'item'} n={isPending ? undefined : total} />
         )}
       </div>
       <ActiveFilters fields={FILTER_FIELDS} />
@@ -77,7 +62,7 @@ export function ItemListPage() {
             <Skeleton key={i} className="h-8" />
           ))}
         </div>
-      ) : rows.length === 0 && !isActive() ? (
+      ) : total === 0 && !isActive() ? (
         <div className="bg-card flex-1 rounded-lg border">
           <EmptyState
             icon={Inbox}
@@ -86,7 +71,7 @@ export function ItemListPage() {
             action={<Button onClick={openCreate}>{t('action.createItem')}</Button>}
           />
         </div>
-      ) : rows.length === 0 ? (
+      ) : total === 0 ? (
         <div className="bg-card flex-1 rounded-lg border">
           <EmptyState
             icon={SearchX}
@@ -100,7 +85,7 @@ export function ItemListPage() {
           />
         </div>
       ) : (
-        <ItemTable rows={rows} pageIndex={page} sorting={sorting} onSortingChange={setSorting} />
+        <ItemTable rows={rows} sorting={sorting} onSortingChange={setSorting} />
       )}
     </div>
   )

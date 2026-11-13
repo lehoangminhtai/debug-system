@@ -4,32 +4,32 @@ import {
   Calendar,
   CircleSlash,
   FolderKanban,
-  History,
-  Info,
   Lightbulb,
   Loader2,
   Pencil,
   RotateCcw,
   User,
   Wrench,
-  type LucideIcon,
 } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { NotFoundPage } from '@/app/not-found-page'
 import { FeatureStatusBadge, PlatformBadge, PriorityBadge } from '@/components/common/badges'
 import { Breadcrumb } from '@/components/common/breadcrumb'
+import { CommentSection } from '@/components/common/comment-section'
+import { InfoBar, InfoItem } from '@/components/common/info-bar'
 import { OtpDeleteButton } from '@/components/common/otp-dialog'
 import { PersonSelect } from '@/components/common/person-select'
+import { ProgressTimeline } from '@/components/common/progress-timeline'
+import { RichContentView } from '@/components/common/rich-text'
 import { Section } from '@/components/common/section'
 import { ErrorState } from '@/components/common/states'
 import { UserName } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { HistoryList } from '@/features/bugs/components/history-list'
+import { HistoryButton } from '@/features/bugs/components/history-button'
 import { FROM_LIST } from '@/features/bugs/hooks/use-scope'
 import { useDocumentTitle } from '@/hooks/use-document-title'
 import { useI18n, type TKey } from '@/i18n'
@@ -44,10 +44,12 @@ import {
   useProjects,
 } from '@/services/queries'
 import { FEATURE_STATUSES, type FeatureStatus } from '@/types'
-import { RichContentView } from '@/components/common/rich-text'
 import { RejectDialog } from '../components/reject-dialog'
 
 const UNASSIGNED = '__none'
+
+/** Các bước của luồng chuẩn; "Từ chối" nằm ngoài luồng (hiện thành nhãn riêng) */
+const STEPS = FEATURE_STATUSES.filter((s) => s !== 'rejected')
 
 /** Nút chuyển trạng thái gợi ý theo luồng Mới → Đã duyệt → Đang làm → Hoàn thành (spec §4). Select vẫn cho mọi hướng. */
 const NEXT: Record<FeatureStatus, { to: FeatureStatus; label: TKey; secondary?: boolean }[]> = {
@@ -64,15 +66,6 @@ const NEXT: Record<FeatureStatus, { to: FeatureStatus; label: TKey; secondary?: 
   rejected: [{ to: 'new', label: 'detail.reopen', secondary: true }],
 }
 
-function IconLabel({ icon: Icon, children }: { icon: LucideIcon; children: ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <Icon className="size-4 shrink-0" aria-hidden />
-      {children}
-    </span>
-  )
-}
-
 /** Ô bỏ trống khi đề xuất (không còn bắt buộc) → hiện "—" */
 const TextBlock = ({ text }: { text: string }) =>
   text.trim() ? (
@@ -87,20 +80,23 @@ function DetailSkeleton() {
     <div className="flex flex-col gap-4" aria-label={t('common.loading')}>
       <Skeleton className="h-4 w-40" />
       <Skeleton className="h-7 w-2/3" />
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-        <Skeleton className="h-80 rounded-lg" />
-        <Skeleton className="h-80 rounded-lg" />
+      <Skeleton className="h-14 rounded-lg" />
+      <Skeleton className="h-20 rounded-lg" />
+      <div className="grid gap-4 xl:grid-cols-12">
+        <Skeleton className="h-80 rounded-lg xl:col-span-8" />
+        <Skeleton className="h-80 rounded-lg xl:col-span-4" />
       </div>
     </div>
   )
 }
 
+/** Cùng bố cục với chi tiết bug: tiến trình gọn → Thông tin nằm ngang → Nội dung (8/12) | Bình luận (4/12). */
 export function FeatureDetailPage() {
   const { code = '' } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
   const { t } = useI18n()
-  const query = useFeature(code)
+  const query = useFeature(code, true, true)
   const projects = useProjects()
   const changeStatus = useChangeFeatureStatus()
   const assign = useAssignFeature()
@@ -112,9 +108,11 @@ export function FeatureDetailPage() {
 
   if (query.isPending) return <DetailSkeleton />
   if (query.isError) {
+    // Bị xoá (kể cả lúc đang xem — tải định kỳ phát hiện) → không tìm thấy
     if (query.error instanceof ApiError && query.error.code === 'not_found')
       return <NotFoundPage title={t('error.featureNotFound', { code })} />
-    return <ErrorState onRetry={() => query.refetch()} className="py-24" titleAs="h1" />
+    // Lỗi khi tải lại định kỳ (mạng chập chờn) mà đã có dữ liệu → giữ trang, lần sau tự thử lại
+    if (!feature) return <ErrorState onRetry={() => query.refetch()} className="py-24" titleAs="h1" />
   }
 
   const f = feature!
@@ -122,6 +120,7 @@ export function FeatureDetailPage() {
   const listUrl = `/${project?.key ?? 'all'}?type=feature`
   const goBack = () => ((location.state as typeof FROM_LIST | null)?.fromList ? navigate(-1) : navigate(listUrl))
   const busy = changeStatus.isPending || assign.isPending
+  const current = STEPS.indexOf(f.status as (typeof STEPS)[number]) // -1 khi bị từ chối
 
   const setStatus = (status: FeatureStatus, rejectReason?: string) => {
     if (status === 'rejected' && rejectReason === undefined) return setRejectOpen(true)
@@ -151,7 +150,7 @@ export function FeatureDetailPage() {
   }
 
   return (
-    <article className="flex flex-col gap-5">
+    <article className="flex flex-col gap-4">
       <header className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <Button variant="outline" size="sm" className="h-7 px-2" onClick={goBack}>
@@ -174,40 +173,6 @@ export function FeatureDetailPage() {
             <PlatformBadge platform={f.platform} />
           </div>
         </div>
-        {/* Hành động: chuyển trạng thái theo luồng + Sửa / Xoá */}
-        <div className="flex flex-wrap gap-2">
-          {NEXT[f.status].map((a) => (
-            <Button
-              key={a.to}
-              size="sm"
-              variant={a.secondary ? 'outline' : 'default'}
-              disabled={busy}
-              onClick={() => setStatus(a.to)}
-            >
-              {a.to === 'rejected' ? <CircleSlash aria-hidden /> : a.secondary && <RotateCcw aria-hidden />}
-              {t(a.label)}
-            </Button>
-          ))}
-          <span aria-hidden className="bg-border mx-1 hidden w-px sm:block" />
-          <Button asChild variant="outline" size="sm">
-            <Link to={`/features/${f.code}/edit`}>
-              <Pencil aria-hidden />
-              {t('action.edit')}
-            </Link>
-          </Button>
-          <OtpDeleteButton
-            title={t('feature.deleteTitle', { code: f.code })}
-            description={t('feature.deleteDesc', { code: f.code })}
-            confirmLabel={t('action.deleteFeature')}
-            confirmCode={f.code}
-            onConfirm={(otp, confirm) =>
-              del.mutateAsync({ code: f.code, confirm, otp }).then(() => {
-                toast.success(t('toast.bugDeleted', { code: f.code }))
-                navigate(listUrl, { replace: true })
-              })
-            }
-          />
-        </div>
         {f.status === 'rejected' && f.rejectReason && (
           <div role="note" className="border-destructive/30 bg-destructive-bg rounded-md border p-3">
             <h2 className="text-destructive-text mb-1 flex items-center gap-1.5 text-xs font-semibold">
@@ -229,86 +194,121 @@ export function FeatureDetailPage() {
         />
       )}
 
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="flex flex-col gap-5">
+      {/* Tiến trình gọn một dòng + hành động. Màn hẹp: hành động xuống dòng dưới */}
+      <section
+        aria-labelledby="progress-title"
+        className="bg-card flex flex-col gap-3 rounded-lg border px-4 py-3 md:flex-row md:items-center md:gap-6"
+      >
+        <h2 id="progress-title" className="sr-only">
+          {t('detail.progress')}
+        </h2>
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          {f.status === 'rejected' && <FeatureStatusBadge status="rejected" />}
+          <ProgressTimeline
+            label={t('detail.progress')}
+            current={current}
+            steps={STEPS.map((s, i) => {
+              const entry = i <= current ? f.history.findLast((h) => h.status === s) : undefined
+              return { key: s, label: t(`featureStatus.${s}`), entry }
+            })}
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-2 md:shrink-0 md:justify-end">
+          {NEXT[f.status].map((a) => (
+            <Button
+              key={a.to}
+              size="sm"
+              variant={a.secondary ? 'outline' : 'default'}
+              disabled={busy}
+              onClick={() => setStatus(a.to)}
+            >
+              {a.to === 'rejected' ? <CircleSlash aria-hidden /> : a.secondary && <RotateCcw aria-hidden />}
+              {t(a.label)}
+            </Button>
+          ))}
+          <Button asChild variant="outline" size="sm">
+            <Link to={`/features/${f.code}/edit`}>
+              <Pencil aria-hidden />
+              {t('action.edit')}
+            </Link>
+          </Button>
+          <OtpDeleteButton
+            title={t('feature.deleteTitle', { code: f.code })}
+            description={t('feature.deleteDesc', { code: f.code })}
+            confirmLabel={t('action.deleteFeature')}
+            confirmCode={f.code}
+            onConfirm={(otp, confirm) =>
+              del.mutateAsync({ code: f.code, confirm, otp }).then(() => {
+                toast.success(t('toast.bugDeleted', { code: f.code }))
+                navigate(listUrl, { replace: true })
+              })
+            }
+          />
+          <HistoryButton history={f.history} kind="feature" />
+        </div>
+      </section>
+
+      {/* Thông tin nằm ngang */}
+      <InfoBar title={t('detail.info')}>
+        <InfoItem
+          icon={Activity}
+          htmlFor="feature-status"
+          label={
+            <>
+              {t('field.status')}
+              {busy && <Loader2 className="size-3 animate-spin" aria-label={t('common.saving')} />}
+            </>
+          }
+        >
+          <Select value={f.status} onValueChange={(v) => setStatus(v as FeatureStatus)} disabled={busy}>
+            <SelectTrigger id="feature-status" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {FEATURE_STATUSES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  <FeatureStatusBadge status={s} />
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </InfoItem>
+        {/* Vừa đủ tên + mã nhân viên (không chia đều như các ô khác) */}
+        <InfoItem icon={Wrench} htmlFor="feature-assignee" label={t('field.owner')} className="flex-none">
+          <PersonSelect
+            id="feature-assignee"
+            className="w-auto max-w-full min-w-36"
+            value={f.assignee ?? UNASSIGNED}
+            onValueChange={setAssignee}
+            disabled={busy}
+            people={people}
+            none={{ value: UNASSIGNED, label: t('table.unassigned') }}
+          />
+        </InfoItem>
+        <InfoItem icon={FolderKanban} label={t('field.project')}>
+          <span className="truncate font-medium">{project?.name ?? t('common.none')}</span>
+        </InfoItem>
+        <InfoItem icon={User} label={t('field.requester')}>
+          <UserName name={f.requester} fallback={t('common.none')} />
+        </InfoItem>
+        <InfoItem icon={Calendar} label={t('field.createdAt')}>
+          <time dateTime={f.createdAt} className="tabular-nums">
+            {formatTs(f.createdAt)}
+          </time>
+        </InfoItem>
+      </InfoBar>
+
+      {/* Nội dung (8/12) | Bình luận (4/12, dính khi cuộn). Dưới xl: xếp dọc */}
+      <div className="grid items-start gap-4 xl:grid-cols-12">
+        <div className="min-w-0 xl:col-span-8">
           <Section id="content" icon={Lightbulb} title={t('feature.content')}>
             <RichContentView html={f.content} empty={t('detail.noContent')} />
           </Section>
         </div>
-
-        <aside className="flex flex-col gap-5 lg:self-stretch">
-          <Section id="info" icon={Info} title={t('detail.info')}>
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="feature-status">
-                  <IconLabel icon={Activity}>{t('field.status')}</IconLabel>
-                </Label>
-                <Select value={f.status} onValueChange={(v) => setStatus(v as FeatureStatus)} disabled={busy}>
-                  <SelectTrigger id="feature-status" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {FEATURE_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        <FeatureStatusBadge status={s} />
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="feature-assignee">
-                  <IconLabel icon={Wrench}>{t('field.owner')}</IconLabel>
-                </Label>
-                <PersonSelect
-                  id="feature-assignee"
-                  value={f.assignee ?? UNASSIGNED}
-                  onValueChange={setAssignee}
-                  disabled={busy}
-                  people={people}
-                  none={{ value: UNASSIGNED, label: t('table.unassigned') }}
-                />
-              </div>
-              {busy && (
-                <p className="text-muted-foreground flex items-center gap-1.5 text-xs" role="status">
-                  <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                  {t('common.saving')}
-                </p>
-              )}
-            </div>
-
-            <dl className="mt-4 grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-3 border-t pt-4 text-sm">
-              <dt className="text-muted-foreground">
-                <IconLabel icon={FolderKanban}>{t('field.project')}</IconLabel>
-              </dt>
-              <dd className="min-w-0 truncate font-medium">{project?.name ?? t('common.none')}</dd>
-              <dt className="text-muted-foreground">
-                <IconLabel icon={User}>{t('field.requester')}</IconLabel>
-              </dt>
-              <dd>
-                <UserName name={f.requester} fallback={t('common.none')} />
-              </dd>
-              <dt className="text-muted-foreground">
-                <IconLabel icon={Calendar}>{t('field.createdAt')}</IconLabel>
-              </dt>
-              <dd>
-                <time dateTime={f.createdAt} className="tabular-nums">
-                  {formatTs(f.createdAt)}
-                </time>
-              </dd>
-            </dl>
-          </Section>
-
-          <Section
-            id="history"
-            icon={History}
-            title={t('detail.history')}
-            className="lg:flex lg:min-h-80 lg:flex-1 lg:flex-col"
-            bodyClassName="lg:relative lg:flex-1"
-          >
-            <HistoryList history={f.history} kind="feature" className="lg:absolute lg:inset-4 lg:max-h-none" />
-          </Section>
-        </aside>
+        <div className="min-w-0 xl:sticky xl:top-18 xl:col-span-4">
+          {/* key theo mã → sang đề xuất khác thì tính lại "đã xem" */}
+          <CommentSection key={f.code} kind="feature" code={f.code} comments={f.comments ?? []} />
+        </div>
       </div>
     </article>
   )

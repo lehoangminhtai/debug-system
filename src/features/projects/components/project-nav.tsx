@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
-import { useProjects } from '@/services/queries'
+import { useProjects, useReleaseStatus } from '@/services/queries'
 
 // Dialog (zod + react-hook-form) chỉ tải khi người dùng bấm "Dự án mới"
 const NewProjectDialog = lazy(() => import('./new-project-dialog').then((m) => ({ default: m.NewProjectDialog })))
@@ -68,7 +68,8 @@ export function ProjectNav({ onNavigate, collapsed = false }: { onNavigate?: () 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogMounted, setDialogMounted] = useState(false)
 
-  const totalBlocking = (projects.data ?? []).reduce((a, p) => a + p.mustFixOpen, 0)
+  // Tổng bug chặn release mọi dự án: server đếm (Project@releaseStatus, cùng cache với dòng release ở /all)
+  const totalBlocking = useReleaseStatus().data?.blockingCount ?? 0
   const countLabel = (n: number) => t('nav.mustFixCount', { n })
   const tip = (name: string, n: number) => (n ? `${name} · ${countLabel(n)}` : name)
 

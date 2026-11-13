@@ -8,7 +8,13 @@ import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { useBugs, useFeatures } from '@/services/queries'
 import { ActiveFilters, ColumnFilter, ResultCount, SearchBox } from '../components/item-filters'
-import { matchFeature, useBugQuery, useItemFilters, type FilterParam, type ItemType } from '../hooks/use-item-filters'
+import {
+  useBugQuery,
+  useFeatureQuery,
+  useItemFilters,
+  type FilterParam,
+  type ItemType,
+} from '../hooks/use-item-filters'
 
 // Kanban đã chia cột theo trạng thái → không lọc trạng thái/mức độ ở đây
 const BOARD_IGNORED: FilterParam[] = ['status', 'fstatus', 'severity']
@@ -57,12 +63,15 @@ export function ItemBoardPage() {
   const type: ItemType = filters.type ?? 'bug'
   const isBug = type === 'bug'
 
-  const bugs = useBugs(useBugQuery(filters, project?.key, BOARD_IGNORED), !scopePending && isBug)
-  const features = useFeatures(project?.key, !scopePending && !isBug)
+  // Server sắp trong cột: mức độ trước, cùng mức thì mới nhất trước
+  const bugQuery = useBugQuery(filters, project?.key, BOARD_IGNORED)
+  const featureQuery = useFeatureQuery(filters, project?.key, BOARD_IGNORED)
+  const bugs = useBugs({ ...bugQuery, sortBy: 'severity', sortDir: 'asc' }, !scopePending && isBug)
+  const features = useFeatures({ ...featureQuery, sortBy: 'priority', sortDir: 'asc' }, !scopePending && !isBug)
   const query = isBug ? bugs : features
   const isPending = scopePending || query.isPending
   const visibleBugs = bugs.data ?? []
-  const visibleFeatures = (features.data ?? []).filter((f) => matchFeature(filters, f, BOARD_IGNORED))
+  const visibleFeatures = features.data ?? []
   const n = isBug ? visibleBugs.length : visibleFeatures.length
 
   if (query.isError) return <ErrorState onRetry={() => void query.refetch()} />
@@ -72,6 +81,7 @@ export function ItemBoardPage() {
       <div role="search" aria-label={t('filter.label')} className="flex flex-wrap items-center gap-2">
         <TypeSwitch value={type} onChange={(v) => setFilter('type', v)} />
         <SearchBox />
+        <ColumnFilter field="mine" variant="toolbar" />
         <ColumnFilter field="platform" variant="toolbar" />
         {isBug ? (
           <ColumnFilter field="core" variant="toolbar" only="bug" />
@@ -80,7 +90,7 @@ export function ItemBoardPage() {
         )}
         <ResultCount kind={type} n={isPending ? undefined : n} />
       </div>
-      <ActiveFilters fields={isBug ? ['platform', 'core'] : ['platform', 'level']} />
+      <ActiveFilters fields={isBug ? ['mine', 'platform', 'core'] : ['mine', 'platform', 'level']} />
       {isPending ? (
         <div className={cn('grid gap-3', isBug ? 'lg:grid-cols-4' : 'xl:grid-cols-5')} aria-label={t('common.loading')}>
           {Array.from({ length: isBug ? 4 : 5 }, (_, i) => (

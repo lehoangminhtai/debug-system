@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { PlatformBadge, PriorityBadge } from '@/components/common/badges'
+import { CommentBadge } from '@/components/common/comment-badge'
 import { Hint } from '@/components/common/hint'
 import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
@@ -19,7 +20,7 @@ import { useI18n } from '@/i18n'
 import { FEATURE_STATUS_META, TONE_TEXT } from '@/lib/meta'
 import { cn } from '@/lib/utils'
 import { useChangeFeatureStatus } from '@/services/queries'
-import { FEATURE_STATUSES, PRIORITIES, type Feature, type FeatureStatus } from '@/types'
+import { FEATURE_STATUSES, type Feature, type FeatureStatus } from '@/types'
 import { RejectDialog } from './reject-dialog'
 
 // ponytail: cùng cách làm với Kanban bug — HTML5 drag & drop gốc, menu "Chuyển sang" thay cho touch.
@@ -91,7 +92,16 @@ function KanbanCard({
       </Link>
       <div className="flex flex-wrap items-center gap-1.5">
         <PlatformBadge platform={f.platform} />
-        <span className="text-muted-foreground ml-auto inline-flex items-center gap-1.5 text-xs">
+        <span className="ml-auto inline-flex items-center gap-2">
+          <CommentBadge
+            kind="feature"
+            code={f.code}
+            count={f.commentCount}
+            last={f.lastComment}
+            className="relative z-10"
+          />
+        </span>
+        <span className="text-muted-foreground inline-flex items-center gap-1.5 text-xs">
           {f.assignee ? (
             <>
               <UserAvatar name={f.assignee} />
@@ -129,13 +139,8 @@ export function FeatureKanban({ features }: { features: Feature[] }) {
     )
   }
 
-  const byColumn = (s: FeatureStatus) =>
-    features
-      .filter((f) => f.status === s)
-      .sort(
-        (a, b) =>
-          PRIORITIES.indexOf(a.priority) - PRIORITIES.indexOf(b.priority) || b.createdAt.localeCompare(a.createdAt),
-      )
+  // Server đã sắp (mức độ mong muốn → mới nhất, sort_by=priority); ở đây chỉ chia cột theo trạng thái
+  const byColumn = (s: FeatureStatus) => features.filter((f) => f.status === s)
 
   return (
     <>
